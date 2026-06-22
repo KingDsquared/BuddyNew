@@ -1,11 +1,11 @@
 {
   "name": "buddynew",
   "version": "1.0.0",
-  "description": "Discord welcome bot",
+  "description": "BuddyNew Discord bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "echo \"No tests set\""
+    "build": "npm install"
   },
   "keywords": [],
   "author": "",
