@@ -206,7 +206,7 @@ client.on("guildMemberAdd", async (member) => {
           "1. Read the rules and check important channels.\n" +
           "2. Change your Path of Exile profile to public so we can check it.\n" +
           "3. If you can’t find where that is, use `!poeprofile`.\n" +
-          "4. Post your character/profile link with `!profiel <link>` so we can check it."
+          "4. Post your character/profile link with `!profiel https://www.pathofexile.com/account/view-profile/YOURNAME/characters` so we can check it."
       },
       { name: "💬 Chat", value: "Say hello and enjoy the server!" }
     )
@@ -263,8 +263,9 @@ client.on("messageCreate", async (message) => {
           "`!level` / `!rank` — Show your XP and level\n" +
           "`!leaderboard` — Show the server XP leaderboard\n" +
           "`!poeprofile` — Help making your PoE profile public\n" +
-          "`!profiel <link>` — Submit your PoE profile for review\n" +
-          "`!myprofile` — Check your onboarding status"
+          "`!profiel <link>` — Submit your PoE character/profile link for review\n" +
+          "`!myprofile` — Check your onboarding status\n" +
+          "`!welcome-test` — Test the welcome message"
       })
       .setColor(0x5865F2)
       .setFooter({ text: "BuddyNew • Path of Exile Guild Bot" })
@@ -344,55 +345,56 @@ client.on("messageCreate", async (message) => {
         "4. Save changes\n\n" +
         "[Open Path of Exile Privacy Settings](https://www.pathofexile.com/my-account/privacy)\n\n" +
         "After that, submit your profile with:\n" +
-        "`!profiel https://www.pathofexile.com/account/view-profile/YOURNAME`"
+        "`!profiel https://www.pathofexile.com/account/view-profile/YOURNAME/characters`"
       )
       .setColor(0xAF6025)
       .setFooter({ text: "This does not submit your profile. It only helps you make it public." });
 
     await message.reply({ embeds: [poeEmbed] });
   }
-  if (msg === "!welcome-test") {
-  const welcomeEmbed = new EmbedBuilder()
-    .setTitle("👋 Welcome to the server!")
-    .setDescription(
-      `Welcome ${message.author} to **${message.guild.name}**!\n\n` +
-      "Please follow the steps below so we can approve you."
-    )
-    .addFields(
-      {
-        name: "📌 Start here",
-        value:
-          "1. Read the rules and check important channels.\n" +
-          "2. Change your Path of Exile profile to public so we can check it.\n" +
-          "3. If you can’t find where that is, use `!poeprofile`.\n" +
-          "4. Post your character/profile link with `!profiel <link>` so we can check it."
-      },
-      { name: "💬 Chat", value: "Say hello and enjoy the server!" }
-    )
-    .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-    .setColor(0x5865F2)
-    .setFooter({ text: `Member #${message.guild.memberCount}` })
-    .setTimestamp();
 
-  await message.channel.send({
-    content: `${message.author}`,
-    embeds: [welcomeEmbed]
-  });
-}
+  if (msg === "!welcome-test") {
+    const welcomeEmbed = new EmbedBuilder()
+      .setTitle("👋 Welcome to the server!")
+      .setDescription(
+        `Welcome ${message.author} to **${message.guild.name}**!\n\n` +
+        "Please follow the steps below so we can approve you."
+      )
+      .addFields(
+        {
+          name: "📌 Start here",
+          value:
+            "1. Read the rules and check important channels.\n" +
+            "2. Change your Path of Exile profile to public so we can check it.\n" +
+            "3. If you can’t find where that is, use `!poeprofile`.\n" +
+            "4. Post your character/profile link with `!profiel https://www.pathofexile.com/account/view-profile/YOURNAME/characters` so we can check it."
+        },
+        { name: "💬 Chat", value: "Say hello and enjoy the server!" }
+      )
+      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+      .setColor(0x5865F2)
+      .setFooter({ text: `Member #${message.guild.memberCount}` })
+      .setTimestamp();
+
+    await message.channel.send({
+      content: `${message.author}`,
+      embeds: [welcomeEmbed]
+    });
+  }
 
   if (command === "!profiel") {
     const profileLink = args[1];
 
     if (!profileLink) {
       await message.reply(
-        "Use: `!profiel https://www.pathofexile.com/account/view-profile/YOURNAME`"
+        "Use: `!profiel https://www.pathofexile.com/account/view-profile/YOURNAME/characters`"
       );
       return;
     }
 
     if (!isValidPoeProfile(profileLink)) {
       await message.reply(
-        "That does not look like a valid Path of Exile profile link.\nUse:\n`https://www.pathofexile.com/account/view-profile/YOURNAME`"
+        "That does not look like a valid Path of Exile profile link.\nUse:\n`https://www.pathofexile.com/account/view-profile/YOURNAME/characters`"
       );
       return;
     }
@@ -615,7 +617,7 @@ client.on("messageCreate", async (message) => {
     saveProfiles();
 
     await message.channel.send(
-      `🗑️ Reset onboarding profile for ${target}. They can submit again with \`!profiel <link>\`.`
+      `🗑️ Reset onboarding profile for ${target}. They can submit again with \`!profiel https://www.pathofexile.com/account/view-profile/YOURNAME/characters\`.`
     );
   }
 
