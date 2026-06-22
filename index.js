@@ -979,27 +979,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
       return;
     }
+    
+if (action === "denyprofile") {
+  pendingDenials.set(interaction.user.id, {
+    targetUserId,
+    channelId: interaction.channel.id,
+    messageId: interaction.message.id
+  });
 
-    if (action === "denyprofile") {
-      const modal = new ModalBuilder()
-        .setCustomId(`denyreason_${targetUserId}`)
-        .setTitle("Deny Profile Submission");
+  await interaction.reply({
+    content:
+      `${interaction.user}, please type the reason why <@${targetUserId}> is denied.\n\n` +
+      `Example: \`Profile is private / wrong link / requirements not met\`\n\n` +
+      `You have 2 minutes to reply.`,
+    ephemeral: false
+  });
 
-      const reasonInput = new TextInputBuilder()
-        .setCustomId("deny_reason")
-        .setLabel("Why is this user denied?")
-        .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder("Example: Profile is private / wrong link / requirements not met")
-        .setRequired(true)
-        .setMaxLength(1000);
-
-      const row = new ActionRowBuilder().addComponents(reasonInput);
-      modal.addComponents(row);
-
-      await interaction.showModal(modal);
-      return;
-    }
-
+  return;
+}
+    
     if (action === "approveprofile") {
       let roleMessage = "";
 
