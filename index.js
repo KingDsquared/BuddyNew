@@ -1,30 +1,57 @@
 require("dotenv").config();
 
 const fs = require("fs");
-const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
+const {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder
+} = require("discord.js");
 
 const WELCOME_CHANNEL_NAME = "welcome";
+const REVIEW_CHANNEL_NAME = "build-review";
+const OFFICER_ROLE_NAME = "Officer";
+
 const LEVELS_FILE = "./levels.json";
+const PROFILES_FILE = "./profiles.json";
 
 const token = process.env.DISCORD_TOKEN;
 
 if (!token) {
-  console.error("ERROR: DISCORD_TOKEN is missing in Railway Variables.");
+  console.error("ERROR: DISCORD_TOKEN is missing.");
   process.exit(1);
 }
 
-let levels = {};
+let levels = fs.existsSync(LEVELS_FILE)
+  ? JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8"))
+  : {};
 
-if (fs.existsSync(LEVELS_FILE)) {
-  levels = JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8"));
-}
+let profiles = fs.existsSync(PROFILES_FILE)
+  ? JSON.parse(fs.readFileSync(PROFILES_FILE, "utf8"))
+  : {};
 
 function saveLevels() {
   fs.writeFileSync(LEVELS_FILE, JSON.stringify(levels, null, 2));
 }
 
+function saveProfiles() {
+  fs.writeFileSync(PROFILES_FILE, JSON.stringify(profiles, null, 2));
+}
+
 function getNeededXp(level) {
   return level * 100;
+}
+
+function isValidPoeProfile(url) {
+  return (
+    url.startsWith("https://www.pathofexile.com/account/view-profile/") ||
+    url.startsWith("https://pathofexile.com/account/view-profile/")
+  );
+}
+
+function isOfficer(message) {
+  return message.member.roles.cache.some(
+    role => role.name === OFFICER_ROLE_NAME
+  );
 }
 
 const client = new Client({
@@ -71,8 +98,11 @@ client.on("messageCreate", async (message) => {
   if (!message.guild) return;
 
   const msg = message.content.toLowerCase();
+  const args = message.content.trim().split(/\s+/);
+  const command = args[0].toLowerCase();
   const userId = message.author.id;
 
+  // XP SYSTEM
   if (!levels[userId]) {
     levels[userId] = { xp: 0, level: 1 };
   }
@@ -98,13 +128,14 @@ client.on("messageCreate", async (message) => {
 
   saveLevels();
 
+  // BASIC COMMANDS
   if (msg === "!ping") {
     await message.reply("Pong!");
   }
 
   if (msg === "!help") {
     await message.reply(
-      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`, `!poeprofile`, `!poe`"
+      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`, `!poe`, `!submitprofile <link>`, `!myprofile`, `!profiles`, `!approve @user`, `!deny @user reason`"
     );
   }
 
@@ -158,7 +189,8 @@ client.on("messageCreate", async (message) => {
     await message.channel.send({ embeds: [leaderboardEmbed] });
   }
 
-  if (msg === "!poeprofile" || msg === "!poe") {
+  // POE PRIVACY LINK
+  if (msg === "!poe" || msg === "!poeprofile") {
     const poeEmbed = new EmbedBuilder()
       .setTitle("🔗 Make your Path of Exile profile public")
       .setDescription(
@@ -170,9 +202,178 @@ client.on("messageCreate", async (message) => {
         "[Open Path of Exile Privacy Settings](https://www.pathofexile.com/my-account/privacy)"
       )
       .setColor(0xAF6025)
-      .setFooter({ text: "Needed for character import / profile viewing" });
+      .setFooter({ text: "Needed for build/profile review" });
 
     await message.reply({ embeds: [poeEmbed] });
+  }
+
+  // SUBMIT POE PROFILE
+  if (command === "!submitprofile") {
+    const profileLink = args[1];
+
+    if (!profileLink) {
+      await message.reply(
+        "Please use: `!submitprofile https://www.pathofexile.com/account/view-profile/YOURNAME`"
+      );
+      return;
+    }
+
+    if (!isValidPoeProfile(profileLink)) {
+      await message.reply(
+        "That does not look like a valid Path of Exile profile link.\nUse a link like:\n`https://www.pathofexile.com/account/view-profile/YOURNAME`"
+      );
+      return;
+    }
+
+    profiles[userId] = {
+      username: message.author.tag,
+      userId: userId,
+      link: profileLink,
+      status: "Pending Review",
+      submittedAt: new Date().toISOString(),
+      reviewedBy: null,
+      reviewNote: null
+    };
+
+    saveProfiles();
+
+    const reviewChannel = message.guild.channels.cache.find(
+      ch => ch.name === REVIEW_CHANNEL_NAME && ch.isTextBased()
+    );
+
+    const submitEmbed = new EmbedBuilder()
+      .setTitle("📥 New PoE Profile Submission")
+      .setDescription(`${message.author} submitted a Path of Exile profile for review.`)
+      .addFields(
+        { name: "User", value: `${message.author}`, inline: true },
+        { name: "Status", value: "Pending Review", inline: true },
+        { name: "Profile Link", value: `[Open Profile](${profileLink})` }
+      )
+      .setColor(0xFEE75C)
+      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+      .setFooter({ text: "Officers: use !approve @user or !deny @user reason" })
+      .setTimestamp();
+
+    if (reviewChannel) {
+      await reviewChannel.send({ embeds: [submitEmbed] });
+    }
+
+    await message.reply(
+      "Your PoE profile has been submitted for officer review."
+    );
+  }
+
+  // CHECK OWN PROFILE
+  if (msg === "!myprofile") {
+    const profile = profiles[userId];
+
+    if (!profile) {
+      await message.reply("You have not submitted a PoE profile yet. Use `!submitprofile <link>`.");
+      return;
+    }
+
+    const profileEmbed = new EmbedBuilder()
+      .setTitle("📄 Your PoE Profile Submission")
+      .addFields(
+        { name: "Status", value: profile.status },
+        { name: "Profile", value: `[Open Profile](${profile.link})` },
+        { name: "Review Note", value: profile.reviewNote || "No note yet." }
+      )
+      .setColor(
+        profile.status === "Approved" ? 0x57F287 :
+        profile.status === "Denied" ? 0xED4245 :
+        0xFEE75C
+      )
+      .setTimestamp();
+
+    await message.reply({ embeds: [profileEmbed] });
+  }
+
+  // OFFICER: LIST PROFILES
+  if (msg === "!profiles") {
+    if (!isOfficer(message)) {
+      await message.reply("Only officers can use this command.");
+      return;
+    }
+
+    const entries = Object.entries(profiles);
+
+    if (entries.length === 0) {
+      await message.reply("No profile submissions yet.");
+      return;
+    }
+
+    const list = entries
+      .map(([id, data], index) => {
+        return `**${index + 1}.** <@${id}> — **${data.status}** — [Profile](${data.link})`;
+      })
+      .join("\n");
+
+    const profilesEmbed = new EmbedBuilder()
+      .setTitle("📋 PoE Profile Submissions")
+      .setDescription(list)
+      .setColor(0x5865F2)
+      .setTimestamp();
+
+    await message.channel.send({ embeds: [profilesEmbed] });
+  }
+
+  // OFFICER: APPROVE
+  if (command === "!approve") {
+    if (!isOfficer(message)) {
+      await message.reply("Only officers can approve profiles.");
+      return;
+    }
+
+    const target = message.mentions.users.first();
+
+    if (!target) {
+      await message.reply("Use: `!approve @user`");
+      return;
+    }
+
+    if (!profiles[target.id]) {
+      await message.reply("That user has not submitted a profile.");
+      return;
+    }
+
+    profiles[target.id].status = "Approved";
+    profiles[target.id].reviewedBy = message.author.tag;
+    profiles[target.id].reviewNote = "Approved by officer.";
+
+    saveProfiles();
+
+    await message.channel.send(`✅ Approved PoE profile for ${target}.`);
+  }
+
+  // OFFICER: DENY
+  if (command === "!deny") {
+    if (!isOfficer(message)) {
+      await message.reply("Only officers can deny profiles.");
+      return;
+    }
+
+    const target = message.mentions.users.first();
+
+    if (!target) {
+      await message.reply("Use: `!deny @user reason`");
+      return;
+    }
+
+    if (!profiles[target.id]) {
+      await message.reply("That user has not submitted a profile.");
+      return;
+    }
+
+    const reason = args.slice(2).join(" ") || "No reason given.";
+
+    profiles[target.id].status = "Denied";
+    profiles[target.id].reviewedBy = message.author.tag;
+    profiles[target.id].reviewNote = reason;
+
+    saveProfiles();
+
+    await message.channel.send(`❌ Denied PoE profile for ${target}.\nReason: ${reason}`);
   }
 });
 
