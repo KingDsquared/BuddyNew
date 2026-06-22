@@ -255,6 +255,70 @@ client.on("guildMemberAdd", async (member) => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
+    const pendingDeny = pendingDenials.get(message.author.id);
+
+  if (pendingDeny && pendingDeny.channelId === message.channel.id) {
+    if (!memberCanReview(message.member)) {
+      pendingDenials.delete(message.author.id);
+      return;
+    }
+
+    const targetUserId = pendingDeny.targetUserId;
+    const profile = profiles[targetUserId];
+
+    if (!profile) {
+      await message.reply("This user has no saved profile submission.");
+      pendingDenials.delete(message.author.id);
+      return;
+    }
+
+    const denyReason = message.content;
+
+    profile.status = "Denied";
+    profile.reviewedBy = message.author.tag;
+    profile.reviewNote = denyReason;
+    profile.deniedAt = new Date().toISOString();
+
+    saveProfiles();
+    pendingDenials.delete(message.author.id);
+
+    const denyEmbed = new EmbedBuilder()
+      .setTitle("❌ PoE Profile Denied")
+      .setDescription(`<@${targetUserId}> was denied by ${message.author}.`)
+      .addFields(
+        { name: "Denied User", value: `<@${targetUserId}>`, inline: true },
+        { name: "Denied By", value: message.author.tag, inline: true },
+        { name: "Reason", value: denyReason },
+        { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
+      )
+      .setColor(0xED4245)
+      .setTimestamp();
+
+    try {
+      const reviewMessage = await message.channel.messages.fetch(pendingDeny.messageId);
+      await reviewMessage.edit({
+        embeds: [denyEmbed],
+        components: []
+      });
+    } catch {
+      await message.channel.send({ embeds: [denyEmbed] });
+    }
+
+    await message.reply(`✅ Denial reason saved for <@${targetUserId}>.`);
+
+    try {
+      const user = await client.users.fetch(targetUserId);
+      await user.send(
+        `Your Path of Exile profile was **Denied** by ${message.author.tag}.\n\n` +
+        `**Reason:** ${denyReason}\n\n` +
+        `PoE Profile: ${profile.link}`
+      );
+    } catch {
+      console.log("Could not DM denied user.");
+    }
+
+    return;
+  }
 
   const msg = message.content.toLowerCase();
   const args = message.content.trim().split(/\s+/);
