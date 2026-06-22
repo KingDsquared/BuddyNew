@@ -66,10 +66,7 @@ async function sendGuildInviteQuestion(guild, userId) {
     ch => ch.name === GUILD_INVITE_CHANNEL_NAME && ch.isTextBased()
   );
 
-  if (!channel) {
-    console.log(`Could not find #${GUILD_INVITE_CHANNEL_NAME}`);
-    return;
-  }
+  if (!channel) return;
 
   const embed = new EmbedBuilder()
     .setTitle("⚔️ Choose Your Ingame Guild")
@@ -98,6 +95,48 @@ async function sendGuildInviteQuestion(guild, userId) {
 
   await channel.send({
     content: `<@${userId}>`,
+    embeds: [embed],
+    components: [buttons]
+  });
+}
+
+async function sendOfficerInviteTracking(guild, userId, choiceName) {
+  const channel = guild.channels.cache.find(
+    ch => ch.name === GUILD_INVITE_CHANNEL_NAME && ch.isTextBased()
+  );
+
+  if (!channel) return;
+
+  const profile = profiles[userId];
+
+  const embed = new EmbedBuilder()
+    .setTitle("📨 Officer Invite Tracking")
+    .setDescription(`<@${userId}> wants to join **${choiceName}**.`)
+    .addFields(
+      { name: "PoE Profile", value: profile?.link ? `[Open Profile](${profile.link})` : "No profile found." },
+      { name: "Invite Status", value: "Waiting for officer invite." }
+    )
+    .setColor(0xFEE75C)
+    .setTimestamp();
+
+  const buttons = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`invitedpoe1_${userId}`)
+      .setLabel("Invited to PoE1")
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId(`invitedpoe2_${userId}`)
+      .setLabel("Invited to PoE2")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId(`inviteddone_${userId}`)
+      .setLabel("Done")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  await channel.send({
     embeds: [embed],
     components: [buttons]
   });
@@ -151,10 +190,7 @@ client.on("messageCreate", async (message) => {
   const command = args[0].toLowerCase();
   const userId = message.author.id;
 
-  // XP SYSTEM
-  if (!levels[userId]) {
-    levels[userId] = { xp: 0, level: 1 };
-  }
+  if (!levels[userId]) levels[userId] = { xp: 0, level: 1 };
 
   const xpGain = Math.floor(Math.random() * 10) + 5;
   levels[userId].xp += xpGain;
@@ -177,9 +213,7 @@ client.on("messageCreate", async (message) => {
 
   saveLevels();
 
-  if (msg === "!ping") {
-    await message.reply("Pong!");
-  }
+  if (msg === "!ping") await message.reply("Pong!");
 
   if (msg === "!help") {
     await message.reply(
@@ -273,13 +307,16 @@ client.on("messageCreate", async (message) => {
 
     profiles[userId] = {
       username: message.author.tag,
-      userId: userId,
+      userId,
       link: profileLink,
       status: "Pending Review",
       submittedAt: new Date().toISOString(),
       reviewedBy: null,
       reviewNote: null,
-      guildChoice: null
+      guildChoice: null,
+      inviteStatus: "Not invited yet",
+      invitedBy: null,
+      inviteCompletedAt: null
     };
 
     saveProfiles();
@@ -289,9 +326,7 @@ client.on("messageCreate", async (message) => {
     );
 
     if (!reviewChannel) {
-      await message.reply(
-        `Profile saved, but I could not find a #${REVIEW_CHANNEL_NAME} channel.`
-      );
+      await message.reply(`Profile saved, but I could not find #${REVIEW_CHANNEL_NAME}.`);
       return;
     }
 
@@ -320,11 +355,7 @@ client.on("messageCreate", async (message) => {
         .setStyle(ButtonStyle.Danger)
     );
 
-    await reviewChannel.send({
-      embeds: [submitEmbed],
-      components: [buttons]
-    });
-
+    await reviewChannel.send({ embeds: [submitEmbed], components: [buttons] });
     await message.reply("Your PoE profile has been submitted for officer review.");
   }
 
@@ -339,9 +370,10 @@ client.on("messageCreate", async (message) => {
     const profileEmbed = new EmbedBuilder()
       .setTitle("📄 Your PoE Profile Submission")
       .addFields(
-        { name: "Status", value: profile.status },
+        { name: "Status", value: profile.status || "Unknown" },
         { name: "PoE Profile", value: `[Open Profile](${profile.link})` },
         { name: "Guild Choice", value: profile.guildChoice || "Not selected yet." },
+        { name: "Invite Status", value: profile.inviteStatus || "Not invited yet." },
         { name: "Review Note", value: profile.reviewNote || "No note yet." }
       )
       .setColor(
@@ -369,7 +401,7 @@ client.on("messageCreate", async (message) => {
 
     const list = entries
       .map(([id, data], index) => {
-        return `**${index + 1}.** <@${id}> — **${data.status}** — ${data.guildChoice || "No guild choice"} — [Profile](${data.link})`;
+        return `**${index + 1}.** <@${id}> — **${data.status}** — ${data.guildChoice || "No guild choice"} — ${data.inviteStatus || "Not invited yet"} — [Profile](${data.link})`;
       })
       .join("\n");
 
@@ -393,20 +425,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const targetUserId = parts[1];
 
     if (!memberIsOfficer(interaction.member)) {
-      await interaction.reply({
-        content: "Only officers can use these buttons.",
-        ephemeral: true
-      });
+      await interaction.reply({ content: "Only officers can use these buttons.", ephemeral: true });
       return;
     }
 
     const profile = profiles[targetUserId];
 
     if (!profile) {
-      await interaction.reply({
-        content: "This user has no saved profile submission.",
-        ephemeral: true
-      });
+      await interaction.reply({ content: "This user has no saved profile submission.", ephemeral: true });
       return;
     }
 
@@ -457,9 +483,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const updatedEmbed = new EmbedBuilder()
       .setTitle(`${statusText} PoE Profile Submission`)
-      .setDescription(
-        `Profile for <@${targetUserId}> was reviewed by ${interaction.user}.${roleMessage}`
-      )
+      .setDescription(`Profile for <@${targetUserId}> was reviewed by ${interaction.user}.${roleMessage}`)
       .addFields(
         { name: "Status", value: profile.status, inline: true },
         { name: "Reviewed By", value: interaction.user.tag, inline: true },
@@ -468,10 +492,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setColor(statusColor)
       .setTimestamp();
 
-    await interaction.update({
-      embeds: [updatedEmbed],
-      components: []
-    });
+    await interaction.update({ embeds: [updatedEmbed], components: [] });
 
     try {
       const user = await client.users.fetch(targetUserId);
@@ -482,7 +503,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           ? `\nYou have been given the **${APPROVED_ROLE_NAME}** role. Please check #${GUILD_INVITE_CHANNEL_NAME} to choose your ingame guild.`
           : "")
       );
-    } catch (error) {
+    } catch {
       console.log("Could not DM reviewed user.");
     }
 
@@ -494,10 +515,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const targetUserId = parts[2];
 
     if (interaction.user.id !== targetUserId) {
-      await interaction.reply({
-        content: "Only the approved user can choose this.",
-        ephemeral: true
-      });
+      await interaction.reply({ content: "Only the approved user can choose this.", ephemeral: true });
       return;
     }
 
@@ -514,6 +532,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const choiceName = choice === "poe1" ? "Path of Exile 1" : "Path of Exile 2";
 
     profile.guildChoice = choiceName;
+    profile.inviteStatus = "Waiting for officer invite";
     saveProfiles();
 
     const updatedEmbed = new EmbedBuilder()
@@ -531,6 +550,62 @@ client.on(Events.InteractionCreate, async (interaction) => {
       embeds: [updatedEmbed],
       components: []
     });
+
+    await sendOfficerInviteTracking(interaction.guild, targetUserId, choiceName);
+    return;
+  }
+
+  if (["invitedpoe1", "invitedpoe2", "inviteddone"].includes(action)) {
+    const targetUserId = parts[1];
+
+    if (!memberIsOfficer(interaction.member)) {
+      await interaction.reply({ content: "Only officers can use these buttons.", ephemeral: true });
+      return;
+    }
+
+    const profile = profiles[targetUserId];
+
+    if (!profile) {
+      await interaction.reply({ content: "No profile found for this user.", ephemeral: true });
+      return;
+    }
+
+    let inviteStatus = "";
+
+    if (action === "invitedpoe1") inviteStatus = "Invited to Path of Exile 1";
+    if (action === "invitedpoe2") inviteStatus = "Invited to Path of Exile 2";
+    if (action === "inviteddone") inviteStatus = "Done";
+
+    profile.inviteStatus = inviteStatus;
+    profile.invitedBy = interaction.user.tag;
+    profile.inviteCompletedAt = new Date().toISOString();
+
+    saveProfiles();
+
+    const done = action === "inviteddone";
+
+    const embed = new EmbedBuilder()
+      .setTitle(done ? "✅ Invite Process Complete" : "📨 Guild Invite Updated")
+      .setDescription(`<@${targetUserId}> invite status was updated by ${interaction.user}.`)
+      .addFields(
+        { name: "Guild Choice", value: profile.guildChoice || "No choice saved.", inline: true },
+        { name: "Invite Status", value: inviteStatus, inline: true },
+        { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
+      )
+      .setColor(done ? 0x57F287 : 0xFEE75C)
+      .setTimestamp();
+
+    await interaction.update({
+      embeds: [embed],
+      components: done ? [] : interaction.message.components
+    });
+
+    try {
+      const user = await client.users.fetch(targetUserId);
+      await user.send(`Your guild invite status is now: **${inviteStatus}**.`);
+    } catch {
+      console.log("Could not DM user about invite status.");
+    }
   }
 });
 
