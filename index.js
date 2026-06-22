@@ -51,23 +51,19 @@ client.on("guildMemberAdd", async (member) => {
     .setTitle("👋 Welcome to the server!")
     .setDescription(
       `Welcome ${member} to **${member.guild.name}**!\n\n` +
-      `We’re happy to have you here. Make sure to read the rules and say hello!`
+      "Please read the rules, introduce yourself, and have fun."
     )
     .addFields(
-      { name: "📌 Start here", value: "Read the rules and check the important channels." },
+      { name: "📌 Start here", value: "Read the rules and check important channels." },
       { name: "🎭 Roles", value: "Pick your roles if the server has role channels." },
-      { name: "💬 Chat", value: "Introduce yourself and have fun!" }
+      { name: "💬 Chat", value: "Say hello and enjoy the server!" }
     )
     .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
     .setColor(0x5865F2)
     .setFooter({ text: `Member #${member.guild.memberCount}` })
     .setTimestamp();
 
-  try {
-    await channel.send({ content: `${member}`, embeds: [welcomeEmbed] });
-  } catch (error) {
-    console.error("Could not send welcome message:", error);
-  }
+  await channel.send({ content: `${member}`, embeds: [welcomeEmbed] });
 });
 
 client.on("messageCreate", async (message) => {
@@ -75,15 +71,10 @@ client.on("messageCreate", async (message) => {
   if (!message.guild) return;
 
   const msg = message.content.toLowerCase();
-
-  // XP SYSTEM
   const userId = message.author.id;
 
   if (!levels[userId]) {
-    levels[userId] = {
-      xp: 0,
-      level: 1
-    };
+    levels[userId] = { xp: 0, level: 1 };
   }
 
   const xpGain = Math.floor(Math.random() * 10) + 5;
@@ -107,14 +98,13 @@ client.on("messageCreate", async (message) => {
 
   saveLevels();
 
-  // COMMANDS
   if (msg === "!ping") {
     await message.reply("Pong!");
   }
 
   if (msg === "!help") {
     await message.reply(
-      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`"
+      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`, `!poeprofile`, `!poe`"
     );
   }
 
@@ -123,28 +113,21 @@ client.on("messageCreate", async (message) => {
       .setTitle("👋 Welcome to the server!")
       .setDescription(
         `Welcome ${message.author} to **${message.guild.name}**!\n\n` +
-        `We’re happy to have you here. Make sure to read the rules and say hello!`
+        "Please read the rules, introduce yourself, and have fun."
       )
-      .addFields(
-        { name: "📌 Start here", value: "Read the rules and check the important channels." },
-        { name: "🎭 Roles", value: "Pick your roles if the server has role channels." },
-        { name: "💬 Chat", value: "Introduce yourself and have fun!" }
-      )
-      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
       .setColor(0x5865F2)
+      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
       .setTimestamp();
 
     await message.channel.send({ embeds: [testEmbed] });
   }
 
   if (msg === "!level" || msg === "!rank") {
-    const userLevel = levels[userId];
-
     const rankEmbed = new EmbedBuilder()
       .setTitle("⭐ Your Level")
       .setDescription(
-        `${message.author}, you are **Level ${userLevel.level}**.\n\n` +
-        `XP: **${userLevel.xp}/${getNeededXp(userLevel.level)}**`
+        `${message.author}, you are **Level ${levels[userId].level}**.\n\n` +
+        `XP: **${levels[userId].xp}/${getNeededXp(levels[userId].level)}**`
       )
       .setColor(0xFEE75C)
       .setThumbnail(message.author.displayAvatarURL({ dynamic: true }));
@@ -160,11 +143,6 @@ client.on("messageCreate", async (message) => {
       })
       .slice(0, 10);
 
-    if (sorted.length === 0) {
-      await message.reply("No XP data yet.");
-      return;
-    }
-
     const leaderboard = sorted
       .map(([id, data], index) => {
         return `**${index + 1}.** <@${id}> — Level ${data.level}, ${data.xp} XP`;
@@ -173,11 +151,28 @@ client.on("messageCreate", async (message) => {
 
     const leaderboardEmbed = new EmbedBuilder()
       .setTitle("🏆 Server Leaderboard")
-      .setDescription(leaderboard)
+      .setDescription(leaderboard || "No XP data yet.")
       .setColor(0xEB459E)
       .setTimestamp();
 
     await message.channel.send({ embeds: [leaderboardEmbed] });
+  }
+
+  if (msg === "!poeprofile" || msg === "!poe") {
+    const poeEmbed = new EmbedBuilder()
+      .setTitle("🔗 Make your Path of Exile profile public")
+      .setDescription(
+        "To make your PoE profile public:\n\n" +
+        "1. Log in to the Path of Exile website\n" +
+        "2. Open your privacy settings\n" +
+        "3. Turn OFF profile privacy\n" +
+        "4. Save changes\n\n" +
+        "[Open Path of Exile Privacy Settings](https://www.pathofexile.com/my-account/privacy)"
+      )
+      .setColor(0xAF6025)
+      .setFooter({ text: "Needed for character import / profile viewing" });
+
+    await message.reply({ embeds: [poeEmbed] });
   }
 });
 
