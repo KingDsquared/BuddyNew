@@ -865,19 +865,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // =========================
   // DENY MODAL SUBMIT
   // =========================
-  if (interaction.isModalSubmit()) {
-    if (!interaction.customId.startsWith("denyreason_")) return;
-
-    const targetUserId = interaction.customId.split("_")[1];
-
-    if (!memberCanReview(interaction.member)) {
-      await interaction.reply({
-        content: "Only officers or leaders can submit denial reasons.",
-        ephemeral: true
-      });
-      return;
-    }
-
+ 
     const profile = profiles[targetUserId];
 
     if (!profile) {
