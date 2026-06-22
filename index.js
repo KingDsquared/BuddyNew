@@ -4,14 +4,11 @@ const fs = require("fs");
 const {
   Client,
   GatewayIntentBits,
-  EmbedBuilder,
+ EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  Events,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle
+  Events
 } = require("discord.js");
 
 // =========================
@@ -45,6 +42,8 @@ let levels = fs.existsSync(LEVELS_FILE)
 let profiles = fs.existsSync(PROFILES_FILE)
   ? JSON.parse(fs.readFileSync(PROFILES_FILE, "utf8"))
   : {};
+
+const pendingDenials = new Map();
 
 function saveLevels() {
   fs.writeFileSync(LEVELS_FILE, JSON.stringify(levels, null, 2));
