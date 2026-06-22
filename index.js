@@ -43,7 +43,7 @@ let profiles = fs.existsSync(PROFILES_FILE)
   ? JSON.parse(fs.readFileSync(PROFILES_FILE, "utf8"))
   : {};
 
-const pendingDenials = new Map();
+const pendingDenials = new Map(please type the reason);
 
 function saveLevels() {
   fs.writeFileSync(LEVELS_FILE, JSON.stringify(levels, null, 2));
