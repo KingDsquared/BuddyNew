@@ -61,6 +61,34 @@ function memberIsOfficer(member) {
   );
 }
 
+function getPendingReason(profile) {
+  if (profile.status === "Pending Review") {
+    return "Waiting for officer profile review";
+  }
+
+  if (profile.status === "Approved" && !profile.guildChoice) {
+    return "Approved, waiting for user to choose PoE1 or PoE2";
+  }
+
+  if (
+    profile.status === "Approved" &&
+    profile.guildChoice &&
+    (!profile.inviteStatus || profile.inviteStatus === "Not invited yet" || profile.inviteStatus === "Waiting for officer invite")
+  ) {
+    return `User chose ${profile.guildChoice}, waiting for officer invite`;
+  }
+
+  if (
+    profile.status === "Approved" &&
+    profile.inviteStatus &&
+    profile.inviteStatus.startsWith("Invited to")
+  ) {
+    return `${profile.inviteStatus}, waiting to be marked Done`;
+  }
+
+  return null;
+}
+
 async function sendGuildInviteQuestion(guild, userId) {
   const channel = guild.channels.cache.find(
     ch => ch.name === GUILD_INVITE_CHANNEL_NAME && ch.isTextBased()
@@ -217,7 +245,7 @@ client.on("messageCreate", async (message) => {
 
   if (msg === "!help") {
     await message.reply(
-      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`, `!poe`, `!submitprofile <poe-profile-link>`, `!myprofile`, `!profiles`"
+      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`, `!poe`, `!submitprofile <poe-profile-link>`, `!myprofile`, `!profiles`, `!pending`"
     );
   }
 
@@ -412,6 +440,57 @@ client.on("messageCreate", async (message) => {
       .setTimestamp();
 
     await message.channel.send({ embeds: [profilesEmbed] });
+  }
+
+  if (msg === "!pending") {
+    if (!memberIsOfficer(message.member)) {
+      await message.reply("Only officers can use this command.");
+      return;
+    }
+
+    const pendingEntries = Object.entries(profiles)
+      .map(([id, profile]) => {
+        return {
+          id,
+          profile,
+          reason: getPendingReason(profile)
+        };
+      })
+      .filter(item => item.reason !== null);
+
+    if (pendingEntries.length === 0) {
+      const emptyEmbed = new EmbedBuilder()
+        .setTitle("✅ Officer Queue")
+        .setDescription("No pending onboarding tasks right now.")
+        .setColor(0x57F287)
+        .setTimestamp();
+
+      await message.channel.send({ embeds: [emptyEmbed] });
+      return;
+    }
+
+    const pendingList = pendingEntries
+      .slice(0, 20)
+      .map((item, index) => {
+        return (
+          `**${index + 1}.** <@${item.id}>\n` +
+          `Status: **${item.profile.status || "Unknown"}**\n` +
+          `Guild: **${item.profile.guildChoice || "Not selected"}**\n` +
+          `Invite: **${item.profile.inviteStatus || "Not invited yet"}**\n` +
+          `Task: ${item.reason}\n` +
+          `[Open Profile](${item.profile.link})`
+        );
+      })
+      .join("\n\n");
+
+    const pendingEmbed = new EmbedBuilder()
+      .setTitle("📌 Officer Pending Queue")
+      .setDescription(pendingList)
+      .setColor(0xFEE75C)
+      .setFooter({ text: `Showing ${Math.min(pendingEntries.length, 20)} of ${pendingEntries.length} pending tasks.` })
+      .setTimestamp();
+
+    await message.channel.send({ embeds: [pendingEmbed] });
   }
 });
 
