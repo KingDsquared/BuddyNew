@@ -8,14 +8,21 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  Events
+  Events,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require("discord.js");
 
+// =========================
+// CONFIG
+// =========================
 const WELCOME_CHANNEL_NAME = "welcome";
 const REVIEW_CHANNEL_NAME = "build-review";
 const GUILD_INVITE_CHANNEL_NAME = "guild-invite";
 
 const OFFICER_ROLE_NAME = "Officer";
+const LEADER_ROLE_NAME = "Leader";
 const APPROVED_ROLE_NAME = "member";
 
 const LEVELS_FILE = "./levels.json";
@@ -28,6 +35,9 @@ if (!token) {
   process.exit(1);
 }
 
+// =========================
+// LOAD / SAVE DATA
+// =========================
 let levels = fs.existsSync(LEVELS_FILE)
   ? JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8"))
   : {};
@@ -44,6 +54,9 @@ function saveProfiles() {
   fs.writeFileSync(PROFILES_FILE, JSON.stringify(profiles, null, 2));
 }
 
+// =========================
+// HELPERS
+// =========================
 function getNeededXp(level) {
   return level * 100;
 }
@@ -55,14 +68,18 @@ function isValidPoeProfile(url) {
   );
 }
 
-function memberIsOfficer(member) {
-  return member.roles.cache.some(
-    role => role.name.toLowerCase() === OFFICER_ROLE_NAME.toLowerCase()
+function memberCanReview(member) {
+  return member.roles.cache.some(role =>
+    [OFFICER_ROLE_NAME.toLowerCase(), LEADER_ROLE_NAME.toLowerCase()].includes(
+      role.name.toLowerCase()
+    )
   );
 }
 
 function getPendingReason(profile) {
-  if (profile.status === "Pending Review") return "Waiting for officer profile review";
+  if (profile.status === "Pending Review") {
+    return "Waiting for officer/leader profile review";
+  }
 
   if (profile.status === "Approved" && !profile.guildChoice) {
     return "Approved, waiting for user to choose PoE1 or PoE2";
@@ -89,6 +106,9 @@ function getPendingReason(profile) {
   return null;
 }
 
+// =========================
+// GUILD INVITE HELPERS
+// =========================
 async function sendGuildInviteQuestion(guild, userId) {
   const channel = guild.channels.cache.find(
     ch => ch.name === GUILD_INVITE_CHANNEL_NAME && ch.isTextBased()
@@ -173,6 +193,9 @@ async function sendOfficerInviteTracking(guild, userId, choiceName) {
   });
 }
 
+// =========================
+// DISCORD CLIENT
+// =========================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -182,10 +205,16 @@ const client = new Client({
   ]
 });
 
+// =========================
+// READY
+// =========================
 client.once("ready", () => {
   console.log("BuddyNew is online as " + client.user.tag);
 });
 
+// =========================
+// WELCOME MESSAGE WHEN USER JOINS
+// =========================
 client.on("guildMemberAdd", async (member) => {
   const channel = member.guild.channels.cache.find(
     ch => ch.name === WELCOME_CHANNEL_NAME && ch.isTextBased()
@@ -215,9 +244,15 @@ client.on("guildMemberAdd", async (member) => {
     .setFooter({ text: `Member #${member.guild.memberCount}` })
     .setTimestamp();
 
-  await channel.send({ content: `${member}`, embeds: [welcomeEmbed] });
+  await channel.send({
+    content: `${member}`,
+    embeds: [welcomeEmbed]
+  });
 });
 
+// =========================
+// MESSAGE CREATE
+// =========================
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
@@ -227,6 +262,9 @@ client.on("messageCreate", async (message) => {
   const command = args[0].toLowerCase();
   const userId = message.author.id;
 
+  // -------------------------
+  // XP / LEVEL SYSTEM
+  // -------------------------
   if (!levels[userId]) levels[userId] = { xp: 0, level: 1 };
 
   const xpGain = Math.floor(Math.random() * 10) + 5;
@@ -250,8 +288,11 @@ client.on("messageCreate", async (message) => {
 
   saveLevels();
 
+  // =========================
+  // !help
+  // =========================
   if (msg === "!help") {
-    const isOfficer = memberIsOfficer(message.member);
+    const canReview = memberCanReview(message.member);
 
     const helpEmbed = new EmbedBuilder()
       .setTitle("📘 BuddyNew Command Menu")
@@ -271,10 +312,10 @@ client.on("messageCreate", async (message) => {
       .setFooter({ text: "BuddyNew • Path of Exile Guild Bot" })
       .setTimestamp();
 
-    if (isOfficer) {
+    if (canReview) {
       helpEmbed.addFields(
         {
-          name: "🛡️ Officer Commands",
+          name: "🛡️ Officer / Leader Commands",
           value:
             "`!profiles` — Show all submitted profiles\n" +
             "`!pending` — Show only users needing action\n" +
@@ -294,8 +335,12 @@ client.on("messageCreate", async (message) => {
     }
 
     await message.reply({ embeds: [helpEmbed] });
+    return;
   }
 
+  // =========================
+  // !level / !rank
+  // =========================
   if (msg === "!level" || msg === "!rank") {
     const rankEmbed = new EmbedBuilder()
       .setTitle("⭐ Your Level")
@@ -307,8 +352,12 @@ client.on("messageCreate", async (message) => {
       .setThumbnail(message.author.displayAvatarURL({ dynamic: true }));
 
     await message.reply({ embeds: [rankEmbed] });
+    return;
   }
 
+  // =========================
+  // !leaderboard
+  // =========================
   if (msg === "!leaderboard") {
     const sorted = Object.entries(levels)
       .sort((a, b) => {
@@ -330,8 +379,12 @@ client.on("messageCreate", async (message) => {
       .setTimestamp();
 
     await message.channel.send({ embeds: [leaderboardEmbed] });
+    return;
   }
 
+  // =========================
+  // !poeprofile
+  // =========================
   if (msg === "!poeprofile") {
     const poeEmbed = new EmbedBuilder()
       .setTitle("🔓 Make your Path of Exile profile public")
@@ -348,11 +401,17 @@ client.on("messageCreate", async (message) => {
         "`!profiel https://www.pathofexile.com/account/view-profile/YOURNAME/characters`"
       )
       .setColor(0xAF6025)
-      .setFooter({ text: "This does not submit your profile. It only helps you make it public." });
+      .setFooter({
+        text: "This does not submit your profile. It only helps you make it public."
+      });
 
     await message.reply({ embeds: [poeEmbed] });
+    return;
   }
 
+  // =========================
+  // !welcome-test
+  // =========================
   if (msg === "!welcome-test") {
     const welcomeEmbed = new EmbedBuilder()
       .setTitle("👋 Welcome to the server!")
@@ -380,8 +439,12 @@ client.on("messageCreate", async (message) => {
       content: `${message.author}`,
       embeds: [welcomeEmbed]
     });
+    return;
   }
 
+            // =========================
+  // !profiel
+  // =========================
   if (command === "!profiel") {
     const profileLink = args[1];
 
@@ -407,6 +470,7 @@ client.on("messageCreate", async (message) => {
       submittedAt: new Date().toISOString(),
       reviewedBy: null,
       reviewNote: null,
+      deniedAt: null,
       guildChoice: null,
       inviteStatus: "Not invited yet",
       invitedBy: null,
@@ -434,7 +498,7 @@ client.on("messageCreate", async (message) => {
       )
       .setColor(0xFEE75C)
       .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-      .setFooter({ text: "Officers can approve or deny using the buttons below." })
+      .setFooter({ text: "Officers / Leaders can approve or deny using the buttons below." })
       .setTimestamp();
 
     const buttons = new ActionRowBuilder().addComponents(
@@ -449,10 +513,22 @@ client.on("messageCreate", async (message) => {
         .setStyle(ButtonStyle.Danger)
     );
 
-    await reviewChannel.send({ embeds: [submitEmbed], components: [buttons] });
-    await message.reply("Your PoE profile has been submitted for officer review.");
+    const reviewMessage = await reviewChannel.send({
+      embeds: [submitEmbed],
+      components: [buttons]
+    });
+
+    profiles[userId].reviewMessageId = reviewMessage.id;
+    profiles[userId].reviewChannelId = reviewChannel.id;
+    saveProfiles();
+
+    await message.reply("Your PoE profile has been submitted for officer / leader review.");
+    return;
   }
 
+  // =========================
+  // !myprofile
+  // =========================
   if (msg === "!myprofile") {
     const profile = profiles[userId];
 
@@ -471,18 +547,24 @@ client.on("messageCreate", async (message) => {
         { name: "Review Note", value: profile.reviewNote || "No note yet." }
       )
       .setColor(
-        profile.status === "Approved" ? 0x57F287 :
-        profile.status === "Denied" ? 0xED4245 :
-        0xFEE75C
+        profile.status === "Approved"
+          ? 0x57F287
+          : profile.status === "Denied"
+          ? 0xED4245
+          : 0xFEE75C
       )
       .setTimestamp();
 
     await message.reply({ embeds: [profileEmbed] });
+    return;
   }
 
+  // =========================
+  // !profiles
+  // =========================
   if (msg === "!profiles") {
-    if (!memberIsOfficer(message.member)) {
-      await message.reply("Only officers can use this command.");
+    if (!memberCanReview(message.member)) {
+      await message.reply("Only officers or leaders can use this command.");
       return;
     }
 
@@ -506,16 +588,24 @@ client.on("messageCreate", async (message) => {
       .setTimestamp();
 
     await message.channel.send({ embeds: [profilesEmbed] });
+    return;
   }
 
+  // =========================
+  // !pending
+  // =========================
   if (msg === "!pending") {
-    if (!memberIsOfficer(message.member)) {
-      await message.reply("Only officers can use this command.");
+    if (!memberCanReview(message.member)) {
+      await message.reply("Only officers or leaders can use this command.");
       return;
     }
 
     const pendingEntries = Object.entries(profiles)
-      .map(([id, profile]) => ({ id, profile, reason: getPendingReason(profile) }))
+      .map(([id, profile]) => ({
+        id,
+        profile,
+        reason: getPendingReason(profile)
+      }))
       .filter(item => item.reason !== null);
 
     if (pendingEntries.length === 0) {
@@ -544,7 +634,7 @@ client.on("messageCreate", async (message) => {
       .join("\n\n");
 
     const pendingEmbed = new EmbedBuilder()
-      .setTitle("📌 Officer Pending Queue")
+      .setTitle("📌 Officer / Leader Pending Queue")
       .setDescription(pendingList)
       .setColor(0xFEE75C)
       .setFooter({
@@ -553,11 +643,15 @@ client.on("messageCreate", async (message) => {
       .setTimestamp();
 
     await message.channel.send({ embeds: [pendingEmbed] });
+    return;
   }
 
+  // =========================
+  // !profile @user
+  // =========================
   if (command === "!profile") {
-    if (!memberIsOfficer(message.member)) {
-      await message.reply("Only officers can use this command.");
+    if (!memberCanReview(message.member)) {
+      await message.reply("Only officers or leaders can use this command.");
       return;
     }
 
@@ -585,6 +679,7 @@ client.on("messageCreate", async (message) => {
         { name: "Reviewed By", value: profile.reviewedBy || "Not reviewed yet", inline: true },
         { name: "Invited By", value: profile.invitedBy || "Not invited yet", inline: true },
         { name: "Submitted At", value: profile.submittedAt || "Unknown" },
+        { name: "Denied At", value: profile.deniedAt || "Not denied" },
         { name: "Invite Completed At", value: profile.inviteCompletedAt || "Not completed yet" },
         { name: "Review Note", value: profile.reviewNote || "No note" },
         { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
@@ -593,11 +688,15 @@ client.on("messageCreate", async (message) => {
       .setTimestamp();
 
     await message.channel.send({ embeds: [embed] });
+    return;
   }
 
+  // =========================
+  // !resetprofile @user
+  // =========================
   if (command === "!resetprofile") {
-    if (!memberIsOfficer(message.member)) {
-      await message.reply("Only officers can use this command.");
+    if (!memberCanReview(message.member)) {
+      await message.reply("Only officers or leaders can use this command.");
       return;
     }
 
@@ -619,11 +718,15 @@ client.on("messageCreate", async (message) => {
     await message.channel.send(
       `🗑️ Reset onboarding profile for ${target}. They can submit again with \`!profiel https://www.pathofexile.com/account/view-profile/YOURNAME/characters\`.`
     );
+    return;
   }
 
+  // =========================
+  // !setguild @user poe1/poe2
+  // =========================
   if (command === "!setguild") {
-    if (!memberIsOfficer(message.member)) {
-      await message.reply("Only officers can use this command.");
+    if (!memberCanReview(message.member)) {
+      await message.reply("Only officers or leaders can use this command.");
       return;
     }
 
@@ -648,11 +751,15 @@ client.on("messageCreate", async (message) => {
     saveProfiles();
 
     await message.channel.send(`✅ Set ${target}'s guild choice to **${profile.guildChoice}**.`);
+    return;
   }
 
+  // =========================
+  // !setinvite @user poe1/poe2/done
+  // =========================
   if (command === "!setinvite") {
-    if (!memberIsOfficer(message.member)) {
-      await message.reply("Only officers can use this command.");
+    if (!memberCanReview(message.member)) {
+      await message.reply("Only officers or leaders can use this command.");
       return;
     }
 
@@ -683,27 +790,122 @@ client.on("messageCreate", async (message) => {
     saveProfiles();
 
     await message.channel.send(`✅ Set ${target}'s invite status to **${profile.inviteStatus}**.`);
+    return;
   }
-});
+  client.on("messageCreate", async (message) => {
+    });
 
+// =========================
+// INTERACTION CREATE
+// =========================
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isButton()) return;
+  // =========================
+  // DENY MODAL SUBMIT
+  // =========================
+  if (interaction.isModalSubmit()) {
+    if (!interaction.customId.startsWith("denyreason_")) return;
 
-  const parts = interaction.customId.split("_");
-  const action = parts[0];
+    const targetUserId = interaction.customId.split("_")[1];
 
-  if (action === "approveprofile" || action === "denyprofile") {
-    const targetUserId = parts[1];
-
-    if (!memberIsOfficer(interaction.member)) {
-      await interaction.reply({ content: "Only officers can use these buttons.", ephemeral: true });
+    if (!memberCanReview(interaction.member)) {
+      await interaction.reply({
+        content: "Only officers or leaders can submit denial reasons.",
+        ephemeral: true
+      });
       return;
     }
 
     const profile = profiles[targetUserId];
 
     if (!profile) {
-      await interaction.reply({ content: "This user has no saved profile submission.", ephemeral: true });
+      await interaction.reply({
+        content: "This user has no saved profile submission.",
+        ephemeral: true
+      });
+      return;
+    }
+
+    const denyReason = interaction.fields.getTextInputValue("deny_reason");
+
+    profile.status = "Denied";
+    profile.reviewedBy = interaction.user.tag;
+    profile.reviewNote = denyReason;
+    profile.deniedAt = new Date().toISOString();
+
+    saveProfiles();
+
+    const denyEmbed = new EmbedBuilder()
+      .setTitle("❌ PoE Profile Denied")
+      .setDescription(`<@${targetUserId}> was denied by ${interaction.user}.`)
+      .addFields(
+        { name: "Denied User", value: `<@${targetUserId}>`, inline: true },
+        { name: "Denied By", value: interaction.user.tag, inline: true },
+        { name: "Status", value: "Denied", inline: true },
+        { name: "Reason", value: denyReason, inline: false },
+        { name: "PoE Profile", value: `[Open Profile](${profile.link})`, inline: false }
+      )
+      .setColor(0xED4245)
+      .setTimestamp();
+
+    await interaction.reply({
+      content: "Denial reason saved.",
+      ephemeral: true
+    });
+
+    try {
+      if (profile.reviewChannelId && profile.reviewMessageId) {
+        const channel = await interaction.guild.channels.fetch(profile.reviewChannelId);
+        const reviewMessage = await channel.messages.fetch(profile.reviewMessageId);
+
+        await reviewMessage.edit({
+          embeds: [denyEmbed],
+          components: []
+        });
+      }
+    } catch (error) {
+      console.log("Could not edit original review message:", error);
+    }
+
+    try {
+      const user = await client.users.fetch(targetUserId);
+      await user.send(
+        `Your Path of Exile profile was **Denied** by ${interaction.user.tag}.\n\n` +
+        `**Reason:** ${denyReason}\n\n` +
+        `PoE Profile: ${profile.link}`
+      );
+    } catch {
+      console.log("Could not DM denied user.");
+    }
+
+    return;
+  }
+
+  if (!interaction.isButton()) return;
+
+  const parts = interaction.customId.split("_");
+  const action = parts[0];
+
+  // =========================
+  // APPROVE / DENY PROFILE BUTTONS
+  // =========================
+  if (action === "approveprofile" || action === "denyprofile") {
+    const targetUserId = parts[1];
+
+    if (!memberCanReview(interaction.member)) {
+      await interaction.reply({
+        content: "Only officers or leaders can use these buttons.",
+        ephemeral: true
+      });
+      return;
+    }
+
+    const profile = profiles[targetUserId];
+
+    if (!profile) {
+      await interaction.reply({
+        content: "This user has no saved profile submission.",
+        ephemeral: true
+      });
       return;
     }
 
@@ -715,12 +917,32 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    let roleMessage = "";
+    if (action === "denyprofile") {
+      const modal = new ModalBuilder()
+        .setCustomId(`denyreason_${targetUserId}`)
+        .setTitle("Deny Profile Submission");
+
+      const reasonInput = new TextInputBuilder()
+        .setCustomId("deny_reason")
+        .setLabel("Why is this user denied?")
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder("Example: Profile is private / wrong link / requirements not met")
+        .setRequired(true)
+        .setMaxLength(1000);
+
+      const row = new ActionRowBuilder().addComponents(reasonInput);
+      modal.addComponents(row);
+
+      await interaction.showModal(modal);
+      return;
+    }
 
     if (action === "approveprofile") {
+      let roleMessage = "";
+
       profile.status = "Approved";
       profile.reviewedBy = interaction.user.tag;
-      profile.reviewNote = "Approved by officer.";
+      profile.reviewNote = "Approved by officer/leader.";
 
       try {
         const guildMember = await interaction.guild.members.fetch(targetUserId);
@@ -739,54 +961,53 @@ client.on(Events.InteractionCreate, async (interaction) => {
         console.log("Could not add approved role:", error);
         roleMessage = `\nWarning: I could not give the **${APPROVED_ROLE_NAME}** role.`;
       }
+
+      saveProfiles();
+
+      const approveEmbed = new EmbedBuilder()
+        .setTitle("✅ Approved PoE Profile Submission")
+        .setDescription(`Profile for <@${targetUserId}> was reviewed by ${interaction.user}.${roleMessage}`)
+        .addFields(
+          { name: "Status", value: profile.status, inline: true },
+          { name: "Reviewed By", value: interaction.user.tag, inline: true },
+          { name: "Review Note", value: profile.reviewNote, inline: false },
+          { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
+        )
+        .setColor(0x57F287)
+        .setTimestamp();
+
+      await interaction.update({
+        embeds: [approveEmbed],
+        components: []
+      });
+
+      try {
+        const user = await client.users.fetch(targetUserId);
+        await user.send(
+          `Your Path of Exile profile was **Approved** by ${interaction.user.tag}.\n\n` +
+          `PoE Profile: ${profile.link}\n` +
+          `You have been given the **${APPROVED_ROLE_NAME}** role. Please check #${GUILD_INVITE_CHANNEL_NAME} to choose your ingame guild.`
+        );
+      } catch {
+        console.log("Could not DM reviewed user.");
+      }
+
+      return;
     }
-
-    if (action === "denyprofile") {
-      profile.status = "Denied";
-      profile.reviewedBy = interaction.user.tag;
-      profile.reviewNote = "Denied by officer.";
-    }
-
-    saveProfiles();
-
-    const statusText = action === "approveprofile" ? "✅ Approved" : "❌ Denied";
-    const statusColor = action === "approveprofile" ? 0x57F287 : 0xED4245;
-
-    const updatedEmbed = new EmbedBuilder()
-      .setTitle(`${statusText} PoE Profile Submission`)
-      .setDescription(`Profile for <@${targetUserId}> was reviewed by ${interaction.user}.${roleMessage}`)
-      .addFields(
-        { name: "Status", value: profile.status, inline: true },
-        { name: "Reviewed By", value: interaction.user.tag, inline: true },
-        { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
-      )
-      .setColor(statusColor)
-      .setTimestamp();
-
-    await interaction.update({ embeds: [updatedEmbed], components: [] });
-
-    try {
-      const user = await client.users.fetch(targetUserId);
-      await user.send(
-        `Your Path of Exile profile was **${profile.status}** by ${interaction.user.tag}.\n\n` +
-        `PoE Profile: ${profile.link}` +
-        (action === "approveprofile"
-          ? `\nYou have been given the **${APPROVED_ROLE_NAME}** role. Please check #${GUILD_INVITE_CHANNEL_NAME} to choose your ingame guild.`
-          : "")
-      );
-    } catch {
-      console.log("Could not DM reviewed user.");
-    }
-
-    return;
   }
 
+  // =========================
+  // GUILD CHOICE BUTTONS
+  // =========================
   if (action === "guildchoice") {
     const choice = parts[1];
     const targetUserId = parts[2];
 
     if (interaction.user.id !== targetUserId) {
-      await interaction.reply({ content: "Only the approved user can choose this.", ephemeral: true });
+      await interaction.reply({
+        content: "Only the approved user can choose this.",
+        ephemeral: true
+      });
       return;
     }
 
@@ -826,18 +1047,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
+  // =========================
+  // INVITE TRACKING BUTTONS
+  // =========================
   if (["invitedpoe1", "invitedpoe2", "inviteddone"].includes(action)) {
     const targetUserId = parts[1];
 
-    if (!memberIsOfficer(interaction.member)) {
-      await interaction.reply({ content: "Only officers can use these buttons.", ephemeral: true });
+    if (!memberCanReview(interaction.member)) {
+      await interaction.reply({
+        content: "Only officers or leaders can use these buttons.",
+        ephemeral: true
+      });
       return;
     }
 
     const profile = profiles[targetUserId];
 
     if (!profile) {
-      await interaction.reply({ content: "No profile found for this user.", ephemeral: true });
+      await interaction.reply({
+        content: "No profile found for this user.",
+        ephemeral: true
+      });
       return;
     }
 
@@ -877,6 +1107,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } catch {
       console.log("Could not DM user about invite status.");
     }
+
+    return;
   }
 });
 
