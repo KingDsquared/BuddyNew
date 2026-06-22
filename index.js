@@ -1,4 +1,3 @@
-```js
 require("dotenv").config();
 
 const fs = require("fs");
@@ -57,7 +56,9 @@ function isValidPoeProfile(url) {
 }
 
 function memberIsOfficer(member) {
-  return member.roles.cache.some(role => role.name === OFFICER_ROLE_NAME);
+  return member.roles.cache.some(
+    role => role.name.toLowerCase() === OFFICER_ROLE_NAME.toLowerCase()
+  );
 }
 
 async function sendGuildInviteQuestion(guild, userId) {
@@ -70,15 +71,15 @@ async function sendGuildInviteQuestion(guild, userId) {
     return;
   }
 
-  const inviteEmbed = new EmbedBuilder()
-    .setTitle("⚔️ Ingame Guild Choice")
+  const embed = new EmbedBuilder()
+    .setTitle("⚔️ Choose Your Ingame Guild")
     .setDescription(
       `<@${userId}>, your profile has been approved!\n\n` +
       "Which ingame guild do you want to join?"
     )
     .addFields(
-      { name: "Path of Exile 1", value: "Click the PoE 1 button below.", inline: true },
-      { name: "Path of Exile 2", value: "Click the PoE 2 button below.", inline: true }
+      { name: "Path of Exile 1", value: "Click the PoE 1 button.", inline: true },
+      { name: "Path of Exile 2", value: "Click the PoE 2 button.", inline: true }
     )
     .setColor(0xAF6025)
     .setTimestamp();
@@ -97,7 +98,7 @@ async function sendGuildInviteQuestion(guild, userId) {
 
   await channel.send({
     content: `<@${userId}>`,
-    embeds: [inviteEmbed],
+    embeds: [embed],
     components: [buttons]
   });
 }
@@ -150,6 +151,7 @@ client.on("messageCreate", async (message) => {
   const command = args[0].toLowerCase();
   const userId = message.author.id;
 
+  // XP SYSTEM
   if (!levels[userId]) {
     levels[userId] = { xp: 0, level: 1 };
   }
@@ -432,7 +434,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (approvedRole) {
           await guildMember.roles.add(approvedRole);
           roleMessage = `\nRole given: **${APPROVED_ROLE_NAME}**`;
-
           await sendGuildInviteQuestion(interaction.guild, targetUserId);
         } else {
           roleMessage = `\nWarning: I could not find the **${APPROVED_ROLE_NAME}** role.`;
@@ -511,6 +512,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     const choiceName = choice === "poe1" ? "Path of Exile 1" : "Path of Exile 2";
+
     profile.guildChoice = choiceName;
     saveProfiles();
 
@@ -533,4 +535,3 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 client.login(token);
-```
