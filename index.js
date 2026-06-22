@@ -73,7 +73,9 @@ function getPendingReason(profile) {
   if (
     profile.status === "Approved" &&
     profile.guildChoice &&
-    (!profile.inviteStatus || profile.inviteStatus === "Not invited yet" || profile.inviteStatus === "Waiting for officer invite")
+    (!profile.inviteStatus ||
+      profile.inviteStatus === "Not invited yet" ||
+      profile.inviteStatus === "Waiting for officer invite")
   ) {
     return `User chose ${profile.guildChoice}, waiting for officer invite`;
   }
@@ -141,7 +143,10 @@ async function sendOfficerInviteTracking(guild, userId, choiceName) {
     .setTitle("📨 Officer Invite Tracking")
     .setDescription(`<@${userId}> wants to join **${choiceName}**.`)
     .addFields(
-      { name: "PoE Profile", value: profile?.link ? `[Open Profile](${profile.link})` : "No profile found." },
+      {
+        name: "PoE Profile",
+        value: profile?.link ? `[Open Profile](${profile.link})` : "No profile found."
+      },
       { name: "Invite Status", value: "Waiting for officer invite." }
     )
     .setColor(0xFEE75C)
@@ -241,26 +246,10 @@ client.on("messageCreate", async (message) => {
 
   saveLevels();
 
-  if (msg === "!ping") await message.reply("Pong!");
-
   if (msg === "!help") {
     await message.reply(
-      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`, `!poe`, `!submitprofile <poe-profile-link>`, `!myprofile`, `!profiles`, `!pending`"
+      "Commands: `!help`, `!level`, `!rank`, `!leaderboard`, `!poe`, `!submitprofile <poe-profile-link>`, `!myprofile`, `!profiles`, `!pending`, `!profile @user`, `!resetprofile @user`, `!setguild @user poe1/poe2`, `!setinvite @user done`"
     );
-  }
-
-  if (msg === "!welcome-test") {
-    const testEmbed = new EmbedBuilder()
-      .setTitle("👋 Welcome to the server!")
-      .setDescription(
-        `Welcome ${message.author} to **${message.guild.name}**!\n\n` +
-        "Please read the rules, introduce yourself, and have fun."
-      )
-      .setColor(0x5865F2)
-      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-      .setTimestamp();
-
-    await message.channel.send({ embeds: [testEmbed] });
   }
 
   if (msg === "!level" || msg === "!rank") {
@@ -449,13 +438,7 @@ client.on("messageCreate", async (message) => {
     }
 
     const pendingEntries = Object.entries(profiles)
-      .map(([id, profile]) => {
-        return {
-          id,
-          profile,
-          reason: getPendingReason(profile)
-        };
-      })
+      .map(([id, profile]) => ({ id, profile, reason: getPendingReason(profile) }))
       .filter(item => item.reason !== null);
 
     if (pendingEntries.length === 0) {
@@ -487,10 +470,138 @@ client.on("messageCreate", async (message) => {
       .setTitle("📌 Officer Pending Queue")
       .setDescription(pendingList)
       .setColor(0xFEE75C)
-      .setFooter({ text: `Showing ${Math.min(pendingEntries.length, 20)} of ${pendingEntries.length} pending tasks.` })
+      .setFooter({
+        text: `Showing ${Math.min(pendingEntries.length, 20)} of ${pendingEntries.length} pending tasks.`
+      })
       .setTimestamp();
 
     await message.channel.send({ embeds: [pendingEmbed] });
+  }
+
+  if (command === "!profile") {
+    if (!memberIsOfficer(message.member)) {
+      await message.reply("Only officers can use this command.");
+      return;
+    }
+
+    const target = message.mentions.users.first();
+
+    if (!target) {
+      await message.reply("Use: `!profile @user`");
+      return;
+    }
+
+    const profile = profiles[target.id];
+
+    if (!profile) {
+      await message.reply("That user has no saved onboarding profile.");
+      return;
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(`📄 Onboarding Record: ${target.tag}`)
+      .addFields(
+        { name: "User", value: `<@${target.id}>`, inline: true },
+        { name: "Review Status", value: profile.status || "Unknown", inline: true },
+        { name: "Guild Choice", value: profile.guildChoice || "Not selected", inline: true },
+        { name: "Invite Status", value: profile.inviteStatus || "Not invited yet", inline: true },
+        { name: "Reviewed By", value: profile.reviewedBy || "Not reviewed yet", inline: true },
+        { name: "Invited By", value: profile.invitedBy || "Not invited yet", inline: true },
+        { name: "Submitted At", value: profile.submittedAt || "Unknown" },
+        { name: "Invite Completed At", value: profile.inviteCompletedAt || "Not completed yet" },
+        { name: "Review Note", value: profile.reviewNote || "No note" },
+        { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
+      )
+      .setColor(0x5865F2)
+      .setTimestamp();
+
+    await message.channel.send({ embeds: [embed] });
+  }
+
+  if (command === "!resetprofile") {
+    if (!memberIsOfficer(message.member)) {
+      await message.reply("Only officers can use this command.");
+      return;
+    }
+
+    const target = message.mentions.users.first();
+
+    if (!target) {
+      await message.reply("Use: `!resetprofile @user`");
+      return;
+    }
+
+    if (!profiles[target.id]) {
+      await message.reply("That user has no profile to reset.");
+      return;
+    }
+
+    delete profiles[target.id];
+    saveProfiles();
+
+    await message.channel.send(`🗑️ Reset onboarding profile for ${target}. They can submit again with \`!submitprofile <link>\`.`);
+  }
+
+  if (command === "!setguild") {
+    if (!memberIsOfficer(message.member)) {
+      await message.reply("Only officers can use this command.");
+      return;
+    }
+
+    const target = message.mentions.users.first();
+    const choice = args[2]?.toLowerCase();
+
+    if (!target || !["poe1", "poe2"].includes(choice)) {
+      await message.reply("Use: `!setguild @user poe1` or `!setguild @user poe2`");
+      return;
+    }
+
+    const profile = profiles[target.id];
+
+    if (!profile) {
+      await message.reply("That user has no saved onboarding profile.");
+      return;
+    }
+
+    profile.guildChoice = choice === "poe1" ? "Path of Exile 1" : "Path of Exile 2";
+    profile.inviteStatus = "Waiting for officer invite";
+
+    saveProfiles();
+
+    await message.channel.send(`✅ Set ${target}'s guild choice to **${profile.guildChoice}**.`);
+  }
+
+  if (command === "!setinvite") {
+    if (!memberIsOfficer(message.member)) {
+      await message.reply("Only officers can use this command.");
+      return;
+    }
+
+    const target = message.mentions.users.first();
+    const status = args[2]?.toLowerCase();
+
+    if (!target || !["poe1", "poe2", "done"].includes(status)) {
+      await message.reply("Use: `!setinvite @user poe1`, `!setinvite @user poe2`, or `!setinvite @user done`");
+      return;
+    }
+
+    const profile = profiles[target.id];
+
+    if (!profile) {
+      await message.reply("That user has no saved onboarding profile.");
+      return;
+    }
+
+    if (status === "poe1") profile.inviteStatus = "Invited to Path of Exile 1";
+    if (status === "poe2") profile.inviteStatus = "Invited to Path of Exile 2";
+    if (status === "done") profile.inviteStatus = "Done";
+
+    profile.invitedBy = message.author.tag;
+    profile.inviteCompletedAt = new Date().toISOString();
+
+    saveProfiles();
+
+    await message.channel.send(`✅ Set ${target}'s invite status to **${profile.inviteStatus}**.`);
   }
 });
 
