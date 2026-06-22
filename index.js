@@ -62,9 +62,7 @@ function memberIsOfficer(member) {
 }
 
 function getPendingReason(profile) {
-  if (profile.status === "Pending Review") {
-    return "Waiting for officer profile review";
-  }
+  if (profile.status === "Pending Review") return "Waiting for officer profile review";
 
   if (profile.status === "Approved" && !profile.guildChoice) {
     return "Approved, waiting for user to choose PoE1 or PoE2";
@@ -247,9 +245,43 @@ client.on("messageCreate", async (message) => {
   saveLevels();
 
   if (msg === "!help") {
-    await message.reply(
-      "Commands: `!help`, `!level`, `!rank`, `!leaderboard`, `!poe`, `!submitprofile <poe-profile-link>`, `!myprofile`, `!profiles`, `!pending`, `!profile @user`, `!resetprofile @user`, `!setguild @user poe1/poe2`, `!setinvite @user done`"
-    );
+    const helpEmbed = new EmbedBuilder()
+      .setTitle("📘 BuddyNew Command Menu")
+      .setDescription("Here are the available commands, grouped by use.")
+      .addFields(
+        {
+          name: "👤 Member Commands",
+          value:
+            "`!help` — Show this menu\n" +
+            "`!level` / `!rank` — Show your XP and level\n" +
+            "`!leaderboard` — Show the server XP leaderboard\n" +
+            "`!poe` / `!poeprofile` — Get the PoE profile privacy link\n" +
+            "`!submitprofile <link>` — Submit your PoE profile for review\n" +
+            "`!myprofile` — Check your onboarding status"
+        },
+        {
+          name: "🛡️ Officer Commands",
+          value:
+            "`!profiles` — Show all submitted profiles\n" +
+            "`!pending` — Show only users needing action\n" +
+            "`!profile @user` — Show full onboarding record\n" +
+            "`!resetprofile @user` — Reset a user’s submission\n" +
+            "`!setguild @user poe1/poe2` — Manually set guild choice\n" +
+            "`!setinvite @user poe1/poe2/done` — Manually set invite status"
+        },
+        {
+          name: "🔘 Button Workflows",
+          value:
+            "**Profile Review:** Approve / Deny\n" +
+            "**Guild Choice:** Path of Exile 1 / Path of Exile 2\n" +
+            "**Invite Tracking:** Invited to PoE1 / Invited to PoE2 / Done"
+        }
+      )
+      .setColor(0x5865F2)
+      .setFooter({ text: "BuddyNew • Path of Exile Guild Bot" })
+      .setTimestamp();
+
+    await message.reply({ embeds: [helpEmbed] });
   }
 
   if (msg === "!level" || msg === "!rank") {
@@ -539,7 +571,9 @@ client.on("messageCreate", async (message) => {
     delete profiles[target.id];
     saveProfiles();
 
-    await message.channel.send(`🗑️ Reset onboarding profile for ${target}. They can submit again with \`!submitprofile <link>\`.`);
+    await message.channel.send(
+      `🗑️ Reset onboarding profile for ${target}. They can submit again with \`!submitprofile <link>\`.`
+    );
   }
 
   if (command === "!setguild") {
@@ -581,7 +615,9 @@ client.on("messageCreate", async (message) => {
     const status = args[2]?.toLowerCase();
 
     if (!target || !["poe1", "poe2", "done"].includes(status)) {
-      await message.reply("Use: `!setinvite @user poe1`, `!setinvite @user poe2`, or `!setinvite @user done`");
+      await message.reply(
+        "Use: `!setinvite @user poe1`, `!setinvite @user poe2`, or `!setinvite @user done`"
+      );
       return;
     }
 
