@@ -351,6 +351,34 @@ client.on("messageCreate", async (message) => {
 
     await message.reply({ embeds: [poeEmbed] });
   }
+  if (msg === "!welcome-test") {
+  const welcomeEmbed = new EmbedBuilder()
+    .setTitle("👋 Welcome to the server!")
+    .setDescription(
+      `Welcome ${message.author} to **${message.guild.name}**!\n\n` +
+      "Please follow the steps below so we can approve you."
+    )
+    .addFields(
+      {
+        name: "📌 Start here",
+        value:
+          "1. Read the rules and check important channels.\n" +
+          "2. Change your Path of Exile profile to public so we can check it.\n" +
+          "3. If you can’t find where that is, use `!poeprofile`.\n" +
+          "4. Post your character/profile link with `!profiel <link>` so we can check it."
+      },
+      { name: "💬 Chat", value: "Say hello and enjoy the server!" }
+    )
+    .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+    .setColor(0x5865F2)
+    .setFooter({ text: `Member #${message.guild.memberCount}` })
+    .setTimestamp();
+
+  await message.channel.send({
+    content: `${message.author}`,
+    embeds: [welcomeEmbed]
+  });
+}
 
   if (command === "!profiel") {
     const profileLink = args[1];
