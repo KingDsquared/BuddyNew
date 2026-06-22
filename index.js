@@ -4,7 +4,11 @@ const fs = require("fs");
 const {
   Client,
   GatewayIntentBits,
-  EmbedBuilder
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  Events
 } = require("discord.js");
 
 const WELCOME_CHANNEL_NAME = "welcome";
@@ -48,10 +52,8 @@ function isValidPoeProfile(url) {
   );
 }
 
-function isOfficer(message) {
-  return message.member.roles.cache.some(
-    role => role.name === OFFICER_ROLE_NAME
-  );
+function memberIsOfficer(member) {
+  return member.roles.cache.some(role => role.name === OFFICER_ROLE_NAME);
 }
 
 const client = new Client({
@@ -128,14 +130,13 @@ client.on("messageCreate", async (message) => {
 
   saveLevels();
 
-  // BASIC COMMANDS
   if (msg === "!ping") {
     await message.reply("Pong!");
   }
 
   if (msg === "!help") {
     await message.reply(
-      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`, `!poe`, `!submitprofile <link>`, `!myprofile`, `!profiles`, `!approve @user`, `!deny @user reason`"
+      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`, `!poe`, `!submitprofile <link>`, `!myprofile`, `!profiles`"
     );
   }
 
@@ -189,7 +190,6 @@ client.on("messageCreate", async (message) => {
     await message.channel.send({ embeds: [leaderboardEmbed] });
   }
 
-  // POE PRIVACY LINK
   if (msg === "!poe" || msg === "!poeprofile") {
     const poeEmbed = new EmbedBuilder()
       .setTitle("🔗 Make your Path of Exile profile public")
@@ -207,20 +207,19 @@ client.on("messageCreate", async (message) => {
     await message.reply({ embeds: [poeEmbed] });
   }
 
-  // SUBMIT POE PROFILE
   if (command === "!submitprofile") {
     const profileLink = args[1];
 
     if (!profileLink) {
       await message.reply(
-        "Please use: `!submitprofile https://www.pathofexile.com/account/view-profile/YOURNAME`"
+        "Use: `!submitprofile https://www.pathofexile.com/account/view-profile/YOURNAME`"
       );
       return;
     }
 
     if (!isValidPoeProfile(profileLink)) {
       await message.reply(
-        "That does not look like a valid Path of Exile profile link.\nUse a link like:\n`https://www.pathofexile.com/account/view-profile/YOURNAME`"
+        "That does not look like a valid Path of Exile profile link.\nUse:\n`https://www.pathofexile.com/account/view-profile/YOURNAME`"
       );
       return;
     }
@@ -241,6 +240,13 @@ client.on("messageCreate", async (message) => {
       ch => ch.name === REVIEW_CHANNEL_NAME && ch.isTextBased()
     );
 
+    if (!reviewChannel) {
+      await message.reply(
+        `Profile saved, but I could not find a #${REVIEW_CHANNEL_NAME} channel.`
+      );
+      return;
+    }
+
     const submitEmbed = new EmbedBuilder()
       .setTitle("📥 New PoE Profile Submission")
       .setDescription(`${message.author} submitted a Path of Exile profile for review.`)
@@ -251,19 +257,29 @@ client.on("messageCreate", async (message) => {
       )
       .setColor(0xFEE75C)
       .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-      .setFooter({ text: "Officers: use !approve @user or !deny @user reason" })
+      .setFooter({ text: "Officers can approve or deny using the buttons below." })
       .setTimestamp();
 
-    if (reviewChannel) {
-      await reviewChannel.send({ embeds: [submitEmbed] });
-    }
+    const buttons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`approve_${userId}`)
+        .setLabel("Approve")
+        .setStyle(ButtonStyle.Success),
 
-    await message.reply(
-      "Your PoE profile has been submitted for officer review."
+      new ButtonBuilder()
+        .setCustomId(`deny_${userId}`)
+        .setLabel("Deny")
+        .setStyle(ButtonStyle.Danger)
     );
+
+    await reviewChannel.send({
+      embeds: [submitEmbed],
+      components: [buttons]
+    });
+
+    await message.reply("Your PoE profile has been submitted for officer review.");
   }
 
-  // CHECK OWN PROFILE
   if (msg === "!myprofile") {
     const profile = profiles[userId];
 
@@ -289,9 +305,8 @@ client.on("messageCreate", async (message) => {
     await message.reply({ embeds: [profileEmbed] });
   }
 
-  // OFFICER: LIST PROFILES
   if (msg === "!profiles") {
-    if (!isOfficer(message)) {
+    if (!memberIsOfficer(message.member)) {
       await message.reply("Only officers can use this command.");
       return;
     }
@@ -317,63 +332,81 @@ client.on("messageCreate", async (message) => {
 
     await message.channel.send({ embeds: [profilesEmbed] });
   }
+});
 
-  // OFFICER: APPROVE
-  if (command === "!approve") {
-    if (!isOfficer(message)) {
-      await message.reply("Only officers can approve profiles.");
-      return;
-    }
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isButton()) return;
 
-    const target = message.mentions.users.first();
+  const [action, targetUserId] = interaction.customId.split("_");
 
-    if (!target) {
-      await message.reply("Use: `!approve @user`");
-      return;
-    }
+  if (!["approve", "deny"].includes(action)) return;
 
-    if (!profiles[target.id]) {
-      await message.reply("That user has not submitted a profile.");
-      return;
-    }
-
-    profiles[target.id].status = "Approved";
-    profiles[target.id].reviewedBy = message.author.tag;
-    profiles[target.id].reviewNote = "Approved by officer.";
-
-    saveProfiles();
-
-    await message.channel.send(`✅ Approved PoE profile for ${target}.`);
+  if (!memberIsOfficer(interaction.member)) {
+    await interaction.reply({
+      content: "Only officers can use these buttons.",
+      ephemeral: true
+    });
+    return;
   }
 
-  // OFFICER: DENY
-  if (command === "!deny") {
-    if (!isOfficer(message)) {
-      await message.reply("Only officers can deny profiles.");
-      return;
-    }
+  const profile = profiles[targetUserId];
 
-    const target = message.mentions.users.first();
+  if (!profile) {
+    await interaction.reply({
+      content: "This user has no saved profile submission.",
+      ephemeral: true
+    });
+    return;
+  }
 
-    if (!target) {
-      await message.reply("Use: `!deny @user reason`");
-      return;
-    }
+  if (profile.status !== "Pending Review") {
+    await interaction.reply({
+      content: `This profile is already marked as ${profile.status}.`,
+      ephemeral: true
+    });
+    return;
+  }
 
-    if (!profiles[target.id]) {
-      await message.reply("That user has not submitted a profile.");
-      return;
-    }
+  if (action === "approve") {
+    profile.status = "Approved";
+    profile.reviewedBy = interaction.user.tag;
+    profile.reviewNote = "Approved by officer.";
+  }
 
-    const reason = args.slice(2).join(" ") || "No reason given.";
+  if (action === "deny") {
+    profile.status = "Denied";
+    profile.reviewedBy = interaction.user.tag;
+    profile.reviewNote = "Denied by officer.";
+  }
 
-    profiles[target.id].status = "Denied";
-    profiles[target.id].reviewedBy = message.author.tag;
-    profiles[target.id].reviewNote = reason;
+  saveProfiles();
 
-    saveProfiles();
+  const statusText = action === "approve" ? "✅ Approved" : "❌ Denied";
+  const statusColor = action === "approve" ? 0x57F287 : 0xED4245;
 
-    await message.channel.send(`❌ Denied PoE profile for ${target}.\nReason: ${reason}`);
+  const updatedEmbed = new EmbedBuilder()
+    .setTitle(`${statusText} PoE Profile Submission`)
+    .setDescription(`Profile for <@${targetUserId}> was reviewed by ${interaction.user}.`)
+    .addFields(
+      { name: "Status", value: profile.status, inline: true },
+      { name: "Reviewed By", value: interaction.user.tag, inline: true },
+      { name: "Profile Link", value: `[Open Profile](${profile.link})` }
+    )
+    .setColor(statusColor)
+    .setTimestamp();
+
+  await interaction.update({
+    embeds: [updatedEmbed],
+    components: []
+  });
+
+  try {
+    const user = await client.users.fetch(targetUserId);
+    await user.send(
+      `Your Path of Exile profile was **${profile.status}** by ${interaction.user.tag}.`
+    );
+  } catch (error) {
+    console.log("Could not DM reviewed user.");
   }
 });
 
