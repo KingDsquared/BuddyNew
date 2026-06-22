@@ -197,11 +197,17 @@ client.on("guildMemberAdd", async (member) => {
     .setTitle("👋 Welcome to the server!")
     .setDescription(
       `Welcome ${member} to **${member.guild.name}**!\n\n` +
-      "Please read the rules, introduce yourself, and have fun."
+      "Please follow the steps below so we can approve you."
     )
     .addFields(
-      { name: "📌 Start here", value: "Read the rules and check important channels." },
-      { name: "🎭 Roles", value: "Pick your roles if the server has role channels." },
+      {
+        name: "📌 Start here",
+        value:
+          "1. Read the rules and check important channels.\n" +
+          "2. Change your Path of Exile profile to public so we can check it.\n" +
+          "3. If you can’t find where that is, use `!poeprofile`.\n" +
+          "4. Post your character/profile link with `!profiel <link>` so we can check it."
+      },
       { name: "💬 Chat", value: "Say hello and enjoy the server!" }
     )
     .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
@@ -245,20 +251,27 @@ client.on("messageCreate", async (message) => {
   saveLevels();
 
   if (msg === "!help") {
+    const isOfficer = memberIsOfficer(message.member);
+
     const helpEmbed = new EmbedBuilder()
       .setTitle("📘 BuddyNew Command Menu")
-      .setDescription("Here are the available commands, grouped by use.")
-      .addFields(
-        {
-          name: "👤 Member Commands",
-          value:
-            "`!help` — Show this menu\n" +
-            "`!level` / `!rank` — Show your XP and level\n" +
-            "`!leaderboard` — Show the server XP leaderboard\n" +
-            "`!poe` / `!poeprofile` — Get the PoE profile privacy link\n" +
-            "`!submitprofile <link>` — Submit your PoE profile for review\n" +
-            "`!myprofile` — Check your onboarding status"
-        },
+      .setDescription("Here are the commands you can use.")
+      .addFields({
+        name: "👤 Member Commands",
+        value:
+          "`!help` — Show this menu\n" +
+          "`!level` / `!rank` — Show your XP and level\n" +
+          "`!leaderboard` — Show the server XP leaderboard\n" +
+          "`!poeprofile` — Help making your PoE profile public\n" +
+          "`!profiel <link>` — Submit your PoE profile for review\n" +
+          "`!myprofile` — Check your onboarding status"
+      })
+      .setColor(0x5865F2)
+      .setFooter({ text: "BuddyNew • Path of Exile Guild Bot" })
+      .setTimestamp();
+
+    if (isOfficer) {
+      helpEmbed.addFields(
         {
           name: "🛡️ Officer Commands",
           value:
@@ -276,10 +289,8 @@ client.on("messageCreate", async (message) => {
             "**Guild Choice:** Path of Exile 1 / Path of Exile 2\n" +
             "**Invite Tracking:** Invited to PoE1 / Invited to PoE2 / Done"
         }
-      )
-      .setColor(0x5865F2)
-      .setFooter({ text: "BuddyNew • Path of Exile Guild Bot" })
-      .setTimestamp();
+      );
+    }
 
     await message.reply({ embeds: [helpEmbed] });
   }
@@ -320,29 +331,33 @@ client.on("messageCreate", async (message) => {
     await message.channel.send({ embeds: [leaderboardEmbed] });
   }
 
-  if (msg === "!poe" || msg === "!poeprofile") {
+  if (msg === "!poeprofile") {
     const poeEmbed = new EmbedBuilder()
-      .setTitle("🔗 Make your Path of Exile profile public")
+      .setTitle("🔓 Make your Path of Exile profile public")
       .setDescription(
-        "To make your PoE profile public:\n\n" +
+        "This command is only for helping you make your Path of Exile profile public.\n\n" +
+        "Your profile must be public so officers can check your characters before approval.\n\n" +
+        "**How to do it:**\n" +
         "1. Log in to the Path of Exile website\n" +
         "2. Open your privacy settings\n" +
         "3. Turn OFF profile privacy\n" +
         "4. Save changes\n\n" +
-        "[Open Path of Exile Privacy Settings](https://www.pathofexile.com/my-account/privacy)"
+        "[Open Path of Exile Privacy Settings](https://www.pathofexile.com/my-account/privacy)\n\n" +
+        "After that, submit your profile with:\n" +
+        "`!profiel https://www.pathofexile.com/account/view-profile/YOURNAME`"
       )
       .setColor(0xAF6025)
-      .setFooter({ text: "Needed for profile review" });
+      .setFooter({ text: "This does not submit your profile. It only helps you make it public." });
 
     await message.reply({ embeds: [poeEmbed] });
   }
 
-  if (command === "!submitprofile") {
+  if (command === "!profiel") {
     const profileLink = args[1];
 
     if (!profileLink) {
       await message.reply(
-        "Use: `!submitprofile https://www.pathofexile.com/account/view-profile/YOURNAME`"
+        "Use: `!profiel https://www.pathofexile.com/account/view-profile/YOURNAME`"
       );
       return;
     }
@@ -412,7 +427,7 @@ client.on("messageCreate", async (message) => {
     const profile = profiles[userId];
 
     if (!profile) {
-      await message.reply("You have not submitted a PoE profile yet. Use `!submitprofile <link>`.");
+      await message.reply("You have not submitted a PoE profile yet. Use `!profiel <link>`.");
       return;
     }
 
@@ -572,7 +587,7 @@ client.on("messageCreate", async (message) => {
     saveProfiles();
 
     await message.channel.send(
-      `🗑️ Reset onboarding profile for ${target}. They can submit again with \`!submitprofile <link>\`.`
+      `🗑️ Reset onboarding profile for ${target}. They can submit again with \`!profiel <link>\`.`
     );
   }
 
