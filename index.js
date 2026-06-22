@@ -16,7 +16,7 @@ const REVIEW_CHANNEL_NAME = "build-review";
 const OFFICER_ROLE_NAME = "Officer";
 
 const LEVELS_FILE = "./levels.json";
-const BUILDS_FILE = "./builds.json";
+const PROFILES_FILE = "./profiles.json";
 
 const token = process.env.DISCORD_TOKEN;
 
@@ -29,16 +29,16 @@ let levels = fs.existsSync(LEVELS_FILE)
   ? JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8"))
   : {};
 
-let builds = fs.existsSync(BUILDS_FILE)
-  ? JSON.parse(fs.readFileSync(BUILDS_FILE, "utf8"))
+let profiles = fs.existsSync(PROFILES_FILE)
+  ? JSON.parse(fs.readFileSync(PROFILES_FILE, "utf8"))
   : {};
 
 function saveLevels() {
   fs.writeFileSync(LEVELS_FILE, JSON.stringify(levels, null, 2));
 }
 
-function saveBuilds() {
-  fs.writeFileSync(BUILDS_FILE, JSON.stringify(builds, null, 2));
+function saveProfiles() {
+  fs.writeFileSync(PROFILES_FILE, JSON.stringify(profiles, null, 2));
 }
 
 function getNeededXp(level) {
@@ -49,14 +49,6 @@ function isValidPoeProfile(url) {
   return (
     url.startsWith("https://www.pathofexile.com/account/view-profile/") ||
     url.startsWith("https://pathofexile.com/account/view-profile/")
-  );
-}
-
-function isValidPobLink(url) {
-  return (
-    url.startsWith("https://pobb.in/") ||
-    url.startsWith("https://pastebin.com/") ||
-    url.startsWith("https://poe.ninja/")
   );
 }
 
@@ -74,7 +66,7 @@ const client = new Client({
 });
 
 client.once("ready", () => {
-  console.log("BuddyNew v3 is online as " + client.user.tag);
+  console.log("BuddyNew is online as " + client.user.tag);
 });
 
 client.on("guildMemberAdd", async (member) => {
@@ -144,7 +136,7 @@ client.on("messageCreate", async (message) => {
 
   if (msg === "!help") {
     await message.reply(
-      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`, `!poe`, `!submitbuild <poe-profile-link> <pob-link>`, `!mybuild`, `!builds`"
+      "Commands: `!ping`, `!help`, `!welcome-test`, `!level`, `!rank`, `!leaderboard`, `!poe`, `!submitprofile <poe-profile-link>`, `!myprofile`, `!profiles`"
     );
   }
 
@@ -210,51 +202,39 @@ client.on("messageCreate", async (message) => {
         "[Open Path of Exile Privacy Settings](https://www.pathofexile.com/my-account/privacy)"
       )
       .setColor(0xAF6025)
-      .setFooter({ text: "Needed for build/profile review" });
+      .setFooter({ text: "Needed for profile review" });
 
     await message.reply({ embeds: [poeEmbed] });
   }
 
-  // SUBMIT BUILD
-  if (command === "!submitbuild") {
-    const poeProfileLink = args[1];
-    const pobLink = args[2];
+  if (command === "!submitprofile") {
+    const profileLink = args[1];
 
-    if (!poeProfileLink || !pobLink) {
+    if (!profileLink) {
       await message.reply(
-        "Use: `!submitbuild <poe-profile-link> <pob-link>`\n\n" +
-        "Example:\n" +
-        "`!submitbuild https://www.pathofexile.com/account/view-profile/YOURNAME https://pobb.in/YOURBUILD`"
+        "Use: `!submitprofile https://www.pathofexile.com/account/view-profile/YOURNAME`"
       );
       return;
     }
 
-    if (!isValidPoeProfile(poeProfileLink)) {
+    if (!isValidPoeProfile(profileLink)) {
       await message.reply(
         "That does not look like a valid Path of Exile profile link.\nUse:\n`https://www.pathofexile.com/account/view-profile/YOURNAME`"
       );
       return;
     }
 
-    if (!isValidPobLink(pobLink)) {
-      await message.reply(
-        "That does not look like a valid PoB/build link.\nAccepted links:\n`https://pobb.in/...`\n`https://pastebin.com/...`\n`https://poe.ninja/...`"
-      );
-      return;
-    }
-
-    builds[userId] = {
+    profiles[userId] = {
       username: message.author.tag,
       userId: userId,
-      poeProfile: poeProfileLink,
-      pobLink: pobLink,
+      link: profileLink,
       status: "Pending Review",
       submittedAt: new Date().toISOString(),
       reviewedBy: null,
       reviewNote: null
     };
 
-    saveBuilds();
+    saveProfiles();
 
     const reviewChannel = message.guild.channels.cache.find(
       ch => ch.name === REVIEW_CHANNEL_NAME && ch.isTextBased()
@@ -262,19 +242,18 @@ client.on("messageCreate", async (message) => {
 
     if (!reviewChannel) {
       await message.reply(
-        `Build saved, but I could not find a #${REVIEW_CHANNEL_NAME} channel.`
+        `Profile saved, but I could not find a #${REVIEW_CHANNEL_NAME} channel.`
       );
       return;
     }
 
     const submitEmbed = new EmbedBuilder()
-      .setTitle("📥 New PoE Build Submission")
-      .setDescription(`${message.author} submitted a build for officer review.`)
+      .setTitle("📥 New PoE Profile Submission")
+      .setDescription(`${message.author} submitted a Path of Exile profile for review.`)
       .addFields(
         { name: "User", value: `${message.author}`, inline: true },
         { name: "Status", value: "Pending Review", inline: true },
-        { name: "PoE Profile", value: `[Open Profile](${poeProfileLink})` },
-        { name: "PoB / Build Link", value: `[Open Build](${pobLink})` }
+        { name: "PoE Profile", value: `[Open Profile](${profileLink})` }
       )
       .setColor(0xFEE75C)
       .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
@@ -283,13 +262,13 @@ client.on("messageCreate", async (message) => {
 
     const buttons = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`approvebuild_${userId}`)
-        .setLabel("Approve Build")
+        .setCustomId(`approveprofile_${userId}`)
+        .setLabel("Approve")
         .setStyle(ButtonStyle.Success),
 
       new ButtonBuilder()
-        .setCustomId(`denybuild_${userId}`)
-        .setLabel("Deny Build")
+        .setCustomId(`denyprofile_${userId}`)
+        .setLabel("Deny")
         .setStyle(ButtonStyle.Danger)
     );
 
@@ -298,61 +277,60 @@ client.on("messageCreate", async (message) => {
       components: [buttons]
     });
 
-    await message.reply("Your PoE build has been submitted for officer review.");
+    await message.reply("Your PoE profile has been submitted for officer review.");
   }
 
-  if (msg === "!mybuild") {
-    const build = builds[userId];
+  if (msg === "!myprofile") {
+    const profile = profiles[userId];
 
-    if (!build) {
-      await message.reply("You have not submitted a build yet. Use `!submitbuild <poe-profile-link> <pob-link>`.");
+    if (!profile) {
+      await message.reply("You have not submitted a PoE profile yet. Use `!submitprofile <link>`.");
       return;
     }
 
-    const buildEmbed = new EmbedBuilder()
-      .setTitle("📄 Your PoE Build Submission")
+    const profileEmbed = new EmbedBuilder()
+      .setTitle("📄 Your PoE Profile Submission")
       .addFields(
-        { name: "Status", value: build.status },
-        { name: "PoE Profile", value: `[Open Profile](${build.poeProfile})` },
-        { name: "PoB / Build", value: `[Open Build](${build.pobLink})` },
-        { name: "Review Note", value: build.reviewNote || "No note yet." }
+        { name: "Status", value: profile.status },
+        { name: "PoE Profile", value: `[Open Profile](${profile.link})` },
+        { name: "Review Note", value: profile.reviewNote || "No note yet." }
       )
       .setColor(
-        build.status === "Approved" ? 0x57F287 :
-        build.status === "Denied" ? 0xED4245 :
+        profile.status === "Approved" ? 0x57F287 :
+        profile.status === "Denied" ? 0xED4245 :
         0xFEE75C
       )
       .setTimestamp();
 
-    await message.reply({ embeds: [buildEmbed] });
+    await message.reply({ embeds: [profileEmbed] });
   }
 
-  if (msg === "!builds") {
+  if (msg === "!profiles") {
     if (!memberIsOfficer(message.member)) {
       await message.reply("Only officers can use this command.");
       return;
     }
 
-    const entries = Object.entries(builds);
+    const entries = Object.entries(profiles);
 
     if (entries.length === 0) {
-      await message.reply("No build submissions yet.");
+      await message.reply("No profile submissions yet.");
       return;
     }
 
     const list = entries
       .map(([id, data], index) => {
-        return `**${index + 1}.** <@${id}> — **${data.status}** — [Profile](${data.poeProfile}) — [Build](${data.pobLink})`;
+        return `**${index + 1}.** <@${id}> — **${data.status}** — [Profile](${data.link})`;
       })
       .join("\n");
 
-    const buildsEmbed = new EmbedBuilder()
-      .setTitle("📋 PoE Build Submissions")
+    const profilesEmbed = new EmbedBuilder()
+      .setTitle("📋 PoE Profile Submissions")
       .setDescription(list)
       .setColor(0x5865F2)
       .setTimestamp();
 
-    await message.channel.send({ embeds: [buildsEmbed] });
+    await message.channel.send({ embeds: [profilesEmbed] });
   }
 });
 
@@ -361,7 +339,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   const [action, targetUserId] = interaction.customId.split("_");
 
-  if (!["approvebuild", "denybuild"].includes(action)) return;
+  if (!["approveprofile", "denyprofile"].includes(action)) return;
 
   if (!memberIsOfficer(interaction.member)) {
     await interaction.reply({
@@ -371,49 +349,48 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  const build = builds[targetUserId];
+  const profile = profiles[targetUserId];
 
-  if (!build) {
+  if (!profile) {
     await interaction.reply({
-      content: "This user has no saved build submission.",
+      content: "This user has no saved profile submission.",
       ephemeral: true
     });
     return;
   }
 
-  if (build.status !== "Pending Review") {
+  if (profile.status !== "Pending Review") {
     await interaction.reply({
-      content: `This build is already marked as ${build.status}.`,
+      content: `This profile is already marked as ${profile.status}.`,
       ephemeral: true
     });
     return;
   }
 
-  if (action === "approvebuild") {
-    build.status = "Approved";
-    build.reviewedBy = interaction.user.tag;
-    build.reviewNote = "Approved by officer.";
+  if (action === "approveprofile") {
+    profile.status = "Approved";
+    profile.reviewedBy = interaction.user.tag;
+    profile.reviewNote = "Approved by officer.";
   }
 
-  if (action === "denybuild") {
-    build.status = "Denied";
-    build.reviewedBy = interaction.user.tag;
-    build.reviewNote = "Denied by officer.";
+  if (action === "denyprofile") {
+    profile.status = "Denied";
+    profile.reviewedBy = interaction.user.tag;
+    profile.reviewNote = "Denied by officer.";
   }
 
-  saveBuilds();
+  saveProfiles();
 
-  const statusText = action === "approvebuild" ? "✅ Approved" : "❌ Denied";
-  const statusColor = action === "approvebuild" ? 0x57F287 : 0xED4245;
+  const statusText = action === "approveprofile" ? "✅ Approved" : "❌ Denied";
+  const statusColor = action === "approveprofile" ? 0x57F287 : 0xED4245;
 
   const updatedEmbed = new EmbedBuilder()
-    .setTitle(`${statusText} PoE Build Submission`)
-    .setDescription(`Build for <@${targetUserId}> was reviewed by ${interaction.user}.`)
+    .setTitle(`${statusText} PoE Profile Submission`)
+    .setDescription(`Profile for <@${targetUserId}> was reviewed by ${interaction.user}.`)
     .addFields(
-      { name: "Status", value: build.status, inline: true },
+      { name: "Status", value: profile.status, inline: true },
       { name: "Reviewed By", value: interaction.user.tag, inline: true },
-      { name: "PoE Profile", value: `[Open Profile](${build.poeProfile})` },
-      { name: "PoB / Build", value: `[Open Build](${build.pobLink})` }
+      { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
     )
     .setColor(statusColor)
     .setTimestamp();
@@ -426,9 +403,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     const user = await client.users.fetch(targetUserId);
     await user.send(
-      `Your Path of Exile build was **${build.status}** by ${interaction.user.tag}.\n\n` +
-      `PoE Profile: ${build.poeProfile}\n` +
-      `PoB / Build: ${build.pobLink}`
+      `Your Path of Exile profile was **${profile.status}** by ${interaction.user.tag}.\n\n` +
+      `PoE Profile: ${profile.link}`
     );
   } catch (error) {
     console.log("Could not DM reviewed user.");
