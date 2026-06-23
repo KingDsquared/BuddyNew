@@ -8,7 +8,10 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  Events
+  Events,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require("discord.js");
 
 const WELCOME_CHANNEL_NAME = "welcome";
@@ -707,275 +710,322 @@ client.on("messageCreate", async (message) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isButton()) return;
+  // -------------------------
+  // BUTTON HANDLER
+  // -------------------------
+  if (interaction.isButton()) {
+    const parts = interaction.customId.split("_");
+    const action = parts[0];
 
-  const parts = interaction.customId.split("_");
-  const action = parts[0];
+    if (action === "approveprofile" || action === "denyprofile") {
+      const targetUserId = parts[1];
 
-  if (action === "approveprofile" || action === "denyprofile") {
-    const targetUserId = parts[1];
-
-    if (!memberCanReview(interaction.member)) {
-      await interaction.reply({
-        content: "Only officers or leaders can use these buttons.",
-        ephemeral: true
-      });
-      return;
-    }
-
-    const profile = profiles[targetUserId];
-
-    if (!profile) {
-      await interaction.reply({
-        content: "This user has no saved profile submission.",
-        ephemeral: true
-      });
-      return;
-    }
-
-    if (profile.status !== "Pending Review") {
-      await interaction.reply({
-        content: `This profile is already marked as ${profile.status}.`,
-        ephemeral: true
-      });
-      return;
-    }
-
-    if (action === "denyprofile") {
-      await interaction.reply({
-        content:
-          `${interaction.user}, please type the reason why <@${targetUserId}> is denied.\n\n` +
-          `You have **2 minutes** to reply in this channel.`,
-        ephemeral: false
-      });
-
-      const filter = msg => msg.author.id === interaction.user.id;
-
-      try {
-        const collected = await interaction.channel.awaitMessages({
-          filter,
-          max: 1,
-          time: 120000,
-          errors: ["time"]
+      if (!memberCanReview(interaction.member)) {
+        await interaction.reply({
+          content: "Only officers or leaders can use these buttons.",
+          ephemeral: true
         });
+        return;
+      }
 
-        const reasonMessage = collected.first();
-        const denyReason = reasonMessage.content;
+      const profile = profiles[targetUserId];
 
-        profile.status = "Denied";
+      if (!profile) {
+        await interaction.reply({
+          content: "This user has no saved profile submission.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      if (profile.status !== "Pending Review") {
+        await interaction.reply({
+          content: `This profile is already marked as ${profile.status}.`,
+          ephemeral: true
+        });
+        return;
+      }
+
+      // -------------------------
+      // DENY -> OPEN MODAL POPUP
+      // -------------------------
+      if (action === "denyprofile") {
+        const modal = new ModalBuilder()
+          .setCustomId(`denyreason_${targetUserId}`)
+          .setTitle("Deny Profile");
+
+        const reasonInput = new TextInputBuilder()
+          .setCustomId("deny_reason")
+          .setLabel("Why is this user denied?")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setPlaceholder("Type the denial reason here...");
+
+        const row = new ActionRowBuilder().addComponents(reasonInput);
+        modal.addComponents(row);
+
+        await interaction.showModal(modal);
+        return;
+      }
+
+      // -------------------------
+      // APPROVE FLOW
+      // -------------------------
+      if (action === "approveprofile") {
+        let roleMessage = "";
+
+        profile.status = "Approved";
         profile.reviewedBy = interaction.user.tag;
-        profile.reviewNote = denyReason;
-        profile.deniedAt = new Date().toISOString();
+        profile.reviewNote = "Approved by officer/leader.";
+
+        try {
+          const guildMember = await interaction.guild.members.fetch(targetUserId);
+          const approvedRole = interaction.guild.roles.cache.find(
+            role => role.name.toLowerCase() === APPROVED_ROLE_NAME.toLowerCase()
+          );
+
+          if (approvedRole) {
+            await guildMember.roles.add(approvedRole);
+            roleMessage = `\nRole given: **${APPROVED_ROLE_NAME}**`;
+            await sendGuildInviteQuestion(interaction.guild, targetUserId);
+          } else {
+            roleMessage = `\nWarning: I could not find the **${APPROVED_ROLE_NAME}** role.`;
+          }
+        } catch (error) {
+          console.log("Could not add approved role:", error);
+          roleMessage = `\nWarning: I could not give the **${APPROVED_ROLE_NAME}** role.`;
+        }
 
         saveProfiles();
 
-        const denyEmbed = new EmbedBuilder()
-          .setTitle("❌ PoE Profile Denied")
-          .setDescription(`<@${targetUserId}> was denied by ${interaction.user}.`)
+        const approveEmbed = new EmbedBuilder()
+          .setTitle("✅ Approved PoE Profile Submission")
+          .setDescription(
+            `Profile for <@${targetUserId}> was reviewed by ${interaction.user}.${roleMessage}`
+          )
           .addFields(
-            { name: "Denied User", value: `<@${targetUserId}>`, inline: true },
-            { name: "Denied By", value: interaction.user.tag, inline: true },
-            { name: "Reason", value: denyReason },
+            { name: "Status", value: profile.status, inline: true },
+            { name: "Reviewed By", value: interaction.user.tag, inline: true },
+            { name: "Review Note", value: profile.reviewNote, inline: false },
             { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
           )
-          .setColor(0xED4245)
+          .setColor(0x57F287)
           .setTimestamp();
 
-        await interaction.message.edit({
-          embeds: [denyEmbed],
+        await interaction.update({
+          embeds: [approveEmbed],
           components: []
         });
-
-        await reasonMessage.reply(`✅ Denial reason saved for <@${targetUserId}>.`);
 
         try {
           const user = await client.users.fetch(targetUserId);
           await user.send(
-            `Your Path of Exile profile was **Denied** by ${interaction.user.tag}.\n\n` +
-            `**Reason:** ${denyReason}\n\n` +
-            `PoE Profile: ${profile.link}`
+            `Your Path of Exile profile was **Approved** by ${interaction.user.tag}.\n\n` +
+            `PoE Profile: ${profile.link}\n` +
+            `You have been given the **${APPROVED_ROLE_NAME}** role. Please check #${GUILD_INVITE_CHANNEL_NAME} to choose your ingame guild.`
           );
         } catch {
-          console.log("Could not DM denied user.");
+          console.log("Could not DM reviewed user.");
         }
-
-        return;
-      } catch {
-        await interaction.followUp({
-          content: `⏰ Deny reason timed out for <@${targetUserId}>. Click **Deny** again if needed.`,
-          ephemeral: false
-        });
 
         return;
       }
     }
 
-    if (action === "approveprofile") {
-      let roleMessage = "";
+    if (action === "guildchoice") {
+      const choice = parts[1];
+      const targetUserId = parts[2];
 
-      profile.status = "Approved";
-      profile.reviewedBy = interaction.user.tag;
-      profile.reviewNote = "Approved by officer/leader.";
-
-      try {
-        const guildMember = await interaction.guild.members.fetch(targetUserId);
-        const approvedRole = interaction.guild.roles.cache.find(
-          role => role.name.toLowerCase() === APPROVED_ROLE_NAME.toLowerCase()
-        );
-
-        if (approvedRole) {
-          await guildMember.roles.add(approvedRole);
-          roleMessage = `\nRole given: **${APPROVED_ROLE_NAME}**`;
-          await sendGuildInviteQuestion(interaction.guild, targetUserId);
-        } else {
-          roleMessage = `\nWarning: I could not find the **${APPROVED_ROLE_NAME}** role.`;
-        }
-      } catch (error) {
-        console.log("Could not add approved role:", error);
-        roleMessage = `\nWarning: I could not give the **${APPROVED_ROLE_NAME}** role.`;
+      if (interaction.user.id !== targetUserId) {
+        await interaction.reply({
+          content: "Only the approved user can choose this.",
+          ephemeral: true
+        });
+        return;
       }
 
+      const profile = profiles[targetUserId];
+
+      if (!profile || profile.status !== "Approved") {
+        await interaction.reply({
+          content: "You need an approved profile before choosing an ingame guild.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      const choiceName = choice === "poe1" ? "Path of Exile 1" : "Path of Exile 2";
+
+      profile.guildChoice = choiceName;
+      profile.inviteStatus = "Waiting for officer invite";
       saveProfiles();
 
-      const approveEmbed = new EmbedBuilder()
-        .setTitle("✅ Approved PoE Profile Submission")
-        .setDescription(`Profile for <@${targetUserId}> was reviewed by ${interaction.user}.${roleMessage}`)
+      const updatedEmbed = new EmbedBuilder()
+        .setTitle("✅ Guild Choice Submitted")
+        .setDescription(`<@${targetUserId}> wants to join **${choiceName}** ingame guild.`)
         .addFields(
-          { name: "Status", value: profile.status, inline: true },
-          { name: "Reviewed By", value: interaction.user.tag, inline: true },
-          { name: "Review Note", value: profile.reviewNote, inline: false },
-          { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
+          { name: "PoE Profile", value: `[Open Profile](${profile.link})` },
+          { name: "Status", value: "Waiting for officer invite" }
         )
         .setColor(0x57F287)
         .setTimestamp();
 
       await interaction.update({
-        embeds: [approveEmbed],
+        content: `<@${targetUserId}> selected **${choiceName}**.`,
+        embeds: [updatedEmbed],
         components: []
+      });
+
+      await sendOfficerInviteTracking(interaction.guild, targetUserId, choiceName);
+      return;
+    }
+
+    if (["invitedpoe1", "invitedpoe2", "inviteddone"].includes(action)) {
+      const targetUserId = parts[1];
+
+      if (!memberCanReview(interaction.member)) {
+        await interaction.reply({
+          content: "Only officers or leaders can use these buttons.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      const profile = profiles[targetUserId];
+
+      if (!profile) {
+        await interaction.reply({
+          content: "No profile found for this user.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      let inviteStatus = "";
+
+      if (action === "invitedpoe1") inviteStatus = "Invited to Path of Exile 1";
+      if (action === "invitedpoe2") inviteStatus = "Invited to Path of Exile 2";
+      if (action === "inviteddone") inviteStatus = "Done";
+
+      profile.inviteStatus = inviteStatus;
+      profile.invitedBy = interaction.user.tag;
+      profile.inviteCompletedAt = new Date().toISOString();
+
+      saveProfiles();
+
+      const done = action === "inviteddone";
+
+      const embed = new EmbedBuilder()
+        .setTitle(done ? "✅ Invite Process Complete" : "📨 Guild Invite Updated")
+        .setDescription(`<@${targetUserId}> invite status was updated by ${interaction.user}.`)
+        .addFields(
+          { name: "Guild Choice", value: profile.guildChoice || "No choice saved.", inline: true },
+          { name: "Invite Status", value: inviteStatus, inline: true },
+          { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
+        )
+        .setColor(done ? 0x57F287 : 0xFEE75C)
+        .setTimestamp();
+
+      await interaction.update({
+        embeds: [embed],
+        components: done ? [] : interaction.message.components
       });
 
       try {
         const user = await client.users.fetch(targetUserId);
-        await user.send(
-          `Your Path of Exile profile was **Approved** by ${interaction.user.tag}.\n\n` +
-          `PoE Profile: ${profile.link}\n` +
-          `You have been given the **${APPROVED_ROLE_NAME}** role. Please check #${GUILD_INVITE_CHANNEL_NAME} to choose your ingame guild.`
-        );
+        await user.send(`Your guild invite status is now: **${inviteStatus}**.`);
       } catch {
-        console.log("Could not DM reviewed user.");
+        console.log("Could not DM user about invite status.");
       }
 
       return;
     }
   }
 
-  if (action === "guildchoice") {
-    const choice = parts[1];
-    const targetUserId = parts[2];
+  // -------------------------
+  // MODAL SUBMIT HANDLER
+  // -------------------------
+  if (interaction.isModalSubmit()) {
+    const parts = interaction.customId.split("_");
 
-    if (interaction.user.id !== targetUserId) {
+    if (parts[0] === "denyreason") {
+      const targetUserId = parts[1];
+
+      if (!memberCanReview(interaction.member)) {
+        await interaction.reply({
+          content: "Only officers or leaders can submit deny reasons.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      const profile = profiles[targetUserId];
+
+      if (!profile) {
+        await interaction.reply({
+          content: "No saved profile found for this user.",
+          ephemeral: true
+        });
+        return;
+      }
+
+      if (profile.status !== "Pending Review") {
+        await interaction.reply({
+          content: `This profile is already marked as ${profile.status}.`,
+          ephemeral: true
+        });
+        return;
+      }
+
+      const denyReason = interaction.fields.getTextInputValue("deny_reason");
+
+      profile.status = "Denied";
+      profile.reviewedBy = interaction.user.tag;
+      profile.reviewNote = denyReason;
+      profile.deniedAt = new Date().toISOString();
+
+      saveProfiles();
+
+      const denyEmbed = new EmbedBuilder()
+        .setTitle("❌ PoE Profile Denied")
+        .setDescription(`<@${targetUserId}> was denied by ${interaction.user}.`)
+        .addFields(
+          { name: "Denied User", value: `<@${targetUserId}>`, inline: true },
+          { name: "Denied By", value: interaction.user.tag, inline: true },
+          { name: "Reason", value: denyReason },
+          { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
+        )
+        .setColor(0xED4245)
+        .setTimestamp();
+
+      try {
+        // update the original review message if we can
+        await interaction.message?.edit({
+          embeds: [denyEmbed],
+          components: []
+        });
+      } catch {
+        // modal submits don't always have message context, so just ignore if not available
+      }
+
       await interaction.reply({
-        content: "Only the approved user can choose this.",
+        content: `✅ Denial saved for <@${targetUserId}>.`,
         ephemeral: true
       });
+
+      try {
+        const user = await client.users.fetch(targetUserId);
+        await user.send(
+          `Your Path of Exile profile was **Denied** by ${interaction.user.tag}.\n\n` +
+          `**Reason:** ${denyReason}\n\n` +
+          `PoE Profile: ${profile.link}`
+        );
+      } catch {
+        console.log("Could not DM denied user.");
+      }
+
       return;
     }
-
-    const profile = profiles[targetUserId];
-
-    if (!profile || profile.status !== "Approved") {
-      await interaction.reply({
-        content: "You need an approved profile before choosing an ingame guild.",
-        ephemeral: true
-      });
-      return;
-    }
-
-    const choiceName = choice === "poe1" ? "Path of Exile 1" : "Path of Exile 2";
-
-    profile.guildChoice = choiceName;
-    profile.inviteStatus = "Waiting for officer invite";
-    saveProfiles();
-
-    const updatedEmbed = new EmbedBuilder()
-      .setTitle("✅ Guild Choice Submitted")
-      .setDescription(`<@${targetUserId}> wants to join **${choiceName}** ingame guild.`)
-      .addFields(
-        { name: "PoE Profile", value: `[Open Profile](${profile.link})` },
-        { name: "Status", value: "Waiting for officer invite" }
-      )
-      .setColor(0x57F287)
-      .setTimestamp();
-
-    await interaction.update({
-      content: `<@${targetUserId}> selected **${choiceName}**.`,
-      embeds: [updatedEmbed],
-      components: []
-    });
-
-    await sendOfficerInviteTracking(interaction.guild, targetUserId, choiceName);
-    return;
-  }
-
-  if (["invitedpoe1", "invitedpoe2", "inviteddone"].includes(action)) {
-    const targetUserId = parts[1];
-
-    if (!memberCanReview(interaction.member)) {
-      await interaction.reply({
-        content: "Only officers or leaders can use these buttons.",
-        ephemeral: true
-      });
-      return;
-    }
-
-    const profile = profiles[targetUserId];
-
-    if (!profile) {
-      await interaction.reply({
-        content: "No profile found for this user.",
-        ephemeral: true
-      });
-      return;
-    }
-
-    let inviteStatus = "";
-
-    if (action === "invitedpoe1") inviteStatus = "Invited to Path of Exile 1";
-    if (action === "invitedpoe2") inviteStatus = "Invited to Path of Exile 2";
-    if (action === "inviteddone") inviteStatus = "Done";
-
-    profile.inviteStatus = inviteStatus;
-    profile.invitedBy = interaction.user.tag;
-    profile.inviteCompletedAt = new Date().toISOString();
-
-    saveProfiles();
-
-    const done = action === "inviteddone";
-
-    const embed = new EmbedBuilder()
-      .setTitle(done ? "✅ Invite Process Complete" : "📨 Guild Invite Updated")
-      .setDescription(`<@${targetUserId}> invite status was updated by ${interaction.user}.`)
-      .addFields(
-        { name: "Guild Choice", value: profile.guildChoice || "No choice saved.", inline: true },
-        { name: "Invite Status", value: inviteStatus, inline: true },
-        { name: "PoE Profile", value: `[Open Profile](${profile.link})` }
-      )
-      .setColor(done ? 0x57F287 : 0xFEE75C)
-      .setTimestamp();
-
-    await interaction.update({
-      embeds: [embed],
-      components: done ? [] : interaction.message.components
-    });
-
-    try {
-      const user = await client.users.fetch(targetUserId);
-      await user.send(`Your guild invite status is now: **${inviteStatus}**.`);
-    } catch {
-      console.log("Could not DM user about invite status.");
-    }
-
-    return;
   }
 });
 
